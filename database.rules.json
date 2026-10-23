@@ -1,0 +1,42 @@
+{
+  "rules": {
+    "lobbies": {
+      "$code": {
+        ".read": "auth != null",
+        ".validate": "$code.matches(/^[A-HJ-NP-Z]{4}$/)",
+        "createdAt": {
+          ".write": "auth != null && !data.exists()",
+          ".validate": "newData.isNumber()"
+        },
+        "masterId": {
+          ".write": "auth != null && (!data.exists() || data.val() === auth.uid)",
+          ".validate": "newData.val() === auth.uid"
+        },
+        "names": {
+          "$key": {
+            ".write": "auth != null && (!data.exists() || data.val() === auth.uid)",
+            ".validate": "newData.val() === auth.uid"
+          }
+        },
+        "players": {
+          "$uid": {
+            ".write": "auth != null && auth.uid === $uid",
+            ".validate": "newData.hasChildren(['name', 'joinedAt']) && root.child('lobbies').child($code).child('createdAt').exists()",
+            "name": { ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 20" },
+            "joinedAt": { ".validate": "newData.isNumber()" },
+            "$other": { ".validate": false }
+          }
+        },
+        "presence": {
+          "$uid": {
+            "$conn": {
+              ".write": "auth != null && auth.uid === $uid",
+              ".validate": "newData.val() === true"
+            }
+          }
+        },
+        "$other": { ".validate": false }
+      }
+    }
+  }
+}

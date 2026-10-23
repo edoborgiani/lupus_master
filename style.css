@@ -132,3 +132,7 @@ button.danger { color: #ff8a8a; }
   position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%);
   background: var(--accent); color: #fff; padding: 8px 16px; border-radius: 999px; font-size: .9rem; margin: 0;
 }
+
+.center { text-align: center; }
+code { background: var(--bg-2); padding: 1px 6px; border-radius: 6px; font-size: .9em; }
+#screen-setup h2 { margin-bottom: 8px; }
