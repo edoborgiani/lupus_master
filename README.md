@@ -13,8 +13,10 @@ and says whether they're the game master (only one master per lobby).
   The master is optional: without one, the lobby's host plays too and the game advances by
   itself once everyone has acted.
 
-Roles: Citizens, Wolves, Magician (protects a house each night, not their own) and Medium
-(visits a house each night and dies in place of the wolves' victim). Most votes is
+Roles: Citizens, Wolves, Seer (learns each night whether a player is a wolf), Magician
+(protects a house each night, not their own) and Medium (visits a house each night and dies
+in place of the wolves' victim). The interface is in Italian and has a "📖 Regole" guide
+explaining roles and rules. Most votes is
 eliminated; a tie goes to a run-off; the wolves win when they are as many as the others.
 
 It's a static site (GitHub Pages) backed by **Firebase Realtime Database**, so there is no

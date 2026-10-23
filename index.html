@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="it">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -8,158 +8,240 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
+  <button class="info-btn" id="btn-info" aria-haspopup="dialog">📖 Regole</button>
+
   <main>
     <header>
       <div class="moon" aria-hidden="true"></div>
       <h1>Lupus in Tabula</h1>
-      <p class="subtitle">Game companion</p>
+      <p class="subtitle">Il compagno di gioco</p>
     </header>
 
-    <!-- Loading -->
+    <!-- Caricamento -->
     <section id="screen-loading" class="screen card center">
-      <p class="muted">Connecting…</p>
+      <p class="muted">Connessione…</p>
     </section>
 
-    <!-- Shown when firebase-config.js still has placeholder values -->
+    <!-- Mostrato quando firebase-config.js contiene ancora i valori di esempio -->
     <section id="screen-setup" class="screen card" hidden>
-      <h2>Setup needed</h2>
-      <p class="muted">Fill in <code>firebase-config.js</code> with your Firebase project's config. See the README.</p>
+      <h2>Configurazione necessaria</h2>
+      <p class="muted">Compila <code>firebase-config.js</code> con la configurazione del tuo progetto Firebase. Vedi il README.</p>
     </section>
 
-    <!-- Home: create or join -->
+    <!-- Home: crea o entra -->
     <section id="screen-home" class="screen card" hidden>
-      <button id="btn-create" class="primary">Create a new lobby</button>
-      <div class="divider"><span>or join one</span></div>
+      <button id="btn-create" class="primary">Crea una nuova stanza</button>
+      <div class="divider"><span>oppure entra in una</span></div>
       <form id="form-join">
-        <label for="input-code">Lobby code</label>
+        <label for="input-code">Codice della stanza</label>
         <div class="row">
           <input id="input-code" maxlength="4" autocomplete="off" autocapitalize="characters"
                  spellcheck="false" placeholder="ABCD" class="code-input">
-          <button type="submit">Join</button>
+          <button type="submit">Entra</button>
         </div>
       </form>
       <p class="error" id="home-error"></p>
     </section>
 
-    <!-- Profile: name + master -->
+    <!-- Profilo: nome + master -->
     <section id="screen-profile" class="screen card" hidden>
-      <p class="lobby-tag">Lobby <strong class="code-label"></strong></p>
+      <p class="lobby-tag">Stanza <strong class="code-label"></strong></p>
       <form id="form-profile">
-        <label for="input-name">Your name</label>
-        <input id="input-name" maxlength="20" autocomplete="nickname" placeholder="e.g. Marta">
+        <label for="input-name">Il tuo nome</label>
+        <input id="input-name" maxlength="20" autocomplete="nickname" placeholder="es. Marta">
 
         <label class="toggle">
           <input type="checkbox" id="input-master">
           <span class="toggle-ui" aria-hidden="true"></span>
           <span>
-            I am the game master
-            <small id="master-hint">The master narrates the game and doesn't play a role.</small>
+            Sono il master
+            <small id="master-hint"></small>
           </span>
         </label>
 
-        <button type="submit" class="primary" id="btn-profile-submit">Enter lobby</button>
-        <button type="button" class="link" id="btn-profile-cancel">Back</button>
+        <button type="submit" class="primary" id="btn-profile-submit">Entra nella stanza</button>
+        <button type="button" class="link" id="btn-profile-cancel">Indietro</button>
       </form>
       <p class="error" id="profile-error"></p>
     </section>
 
-    <!-- Lobby -->
+    <!-- Stanza -->
     <section id="screen-lobby" class="screen" hidden>
       <div class="card share" id="card-share">
-        <p class="muted">Share this code with the other players</p>
-        <button class="big-code code-label" id="btn-copy-code" title="Copy code"></button>
-        <button id="btn-share" class="secondary">Share invite link</button>
+        <p class="muted">Condividi questo codice con gli altri giocatori</p>
+        <button class="big-code code-label" id="btn-copy-code" title="Copia il codice"></button>
+        <button id="btn-share" class="secondary">Condividi il link di invito</button>
         <p class="muted small" id="copy-feedback">&nbsp;</p>
       </div>
 
-      <!-- Master, before the game: start button -->
+      <!-- Chi guida la partita, prima di iniziare -->
       <div class="card" id="card-start" hidden>
-        <button class="primary" id="btn-start">Start game</button>
+        <button class="primary" id="btn-start">Inizia la partita</button>
         <p class="muted small center" id="start-hint"></p>
       </div>
 
-      <!-- Players: waiting messages -->
+      <!-- Giocatori: messaggi di attesa -->
       <div class="card center" id="card-wait" hidden>
         <p class="muted" id="wait-text"></p>
       </div>
 
-      <!-- Master: choose how many of each role -->
+      <!-- Scelta della modalità e dei ruoli -->
       <div class="card" id="card-setup" hidden>
         <div class="list-head">
-          <h2>Choose the roles</h2>
+          <h2>Prepara la partita</h2>
           <span class="count" id="setup-total"></span>
         </div>
-        <div class="modes" role="radiogroup" aria-label="Way of playing">
+        <div class="modes" role="radiogroup" aria-label="Modalità di gioco">
           <label class="mode" id="mode-live">
             <input type="radio" name="mode" value="live">
-            <span><strong>🗣️ Live</strong><small>Everyone at the same table. Phones only show the roles; the master records the night and the vote.</small></span>
+            <span><strong>🗣️ Dal vivo</strong><small>Tutti allo stesso tavolo. I telefoni mostrano solo i ruoli; il master registra la notte e la votazione.</small></span>
           </label>
           <label class="mode" id="mode-remote">
             <input type="radio" name="mode" value="remote">
-            <span><strong>📱 Remote</strong><small>Everyone plays on their own phone: night actions and votes happen in the app.</small></span>
+            <span><strong>📱 A distanza</strong><small>Ognuno gioca dal proprio telefono: azioni notturne e voti avvengono nell'app.</small></span>
           </label>
         </div>
         <p class="muted small" id="setup-suggestion"></p>
         <ul id="role-counters" class="plain-list"></ul>
         <p class="error" id="setup-error"></p>
-        <button class="primary" id="btn-assign">Assign roles</button>
+        <button class="primary" id="btn-assign">Distribuisci i ruoli</button>
         <div class="row-buttons">
-          <button class="link" id="btn-suggest">Use suggested</button>
-          <button class="link danger" id="btn-cancel-setup">Cancel</button>
+          <button class="link" id="btn-suggest">Usa i suggeriti</button>
+          <button class="link danger" id="btn-cancel-setup">Annulla</button>
         </div>
       </div>
 
-      <!-- Current phase (night actions, day vote, results), built by app.js -->
+      <!-- Fase in corso (notte, giorno, risultati), costruita da app.js -->
       <div class="card" id="card-phase" hidden></div>
 
-      <!-- Player: own role, hidden until tapped -->
+      <!-- Giocatore: il proprio ruolo, nascosto finché non si tocca -->
       <div class="card" id="card-role" hidden>
         <button class="role-reveal" id="btn-reveal" aria-expanded="false">
-          <span class="role-hidden">Tap to see your role<small>Make sure nobody is looking</small></span>
+          <span class="role-hidden">Tocca per vedere il tuo ruolo<small>Assicurati che nessuno stia guardando</small></span>
           <span class="role-shown">
             <span class="role-icon" id="role-icon"></span>
             <strong id="role-name"></strong>
             <span id="role-desc"></span>
             <span class="role-pack" id="role-pack"></span>
-            <small>Tap again to hide</small>
+            <small>Tocca di nuovo per nasconderlo</small>
           </span>
         </button>
         <p class="muted small center" id="game-counts"></p>
       </div>
 
-      <!-- Master: everyone's role -->
+      <!-- Master: i ruoli di tutti -->
       <div class="card" id="card-master-roles" hidden>
         <div class="list-head">
-          <h2>Roles</h2>
+          <h2>Ruoli</h2>
           <span class="count" id="master-counts"></span>
         </div>
         <ul id="master-role-list" class="plain-list"></ul>
-        <button class="link danger" id="btn-end-game">End game</button>
+        <button class="link danger" id="btn-end-game">Termina la partita</button>
       </div>
 
-      <!-- Game history -->
+      <!-- Cronologia -->
       <div class="card" id="card-log" hidden>
-        <h2>History</h2>
+        <h2>Cronologia</h2>
         <ol id="game-log"></ol>
       </div>
 
       <div class="card" id="card-players">
         <div class="list-head">
-          <h2>Players</h2>
+          <h2>Giocatori</h2>
           <span class="count" id="player-count"></span>
         </div>
         <ul id="player-list" class="plain-list"></ul>
-        <p class="muted small" id="no-master">No game master yet.</p>
+        <p class="muted small" id="no-master"></p>
       </div>
 
       <div class="actions">
-        <button class="secondary" id="btn-edit">Edit name / role</button>
-        <button class="link danger" id="btn-leave">Leave lobby</button>
+        <button class="secondary" id="btn-edit">Modifica nome / ruolo</button>
+        <button class="link danger" id="btn-leave">Esci dalla stanza</button>
       </div>
     </section>
 
-    <p id="conn-status" class="conn" hidden>Reconnecting…</p>
+    <p id="conn-status" class="conn" hidden>Riconnessione…</p>
   </main>
+
+  <!-- Regole del gioco -->
+  <dialog id="info" aria-labelledby="info-title">
+    <div class="info-head">
+      <h2 id="info-title">📖 Regole del gioco</h2>
+      <button class="link close" id="btn-info-close" aria-label="Chiudi">✕</button>
+    </div>
+    <div class="info-body">
+      <section>
+        <h3>Lo scopo</h3>
+        <p>Nel villaggio si nascondono dei <strong>lupi</strong>. Ogni notte uccidono qualcuno; ogni giorno
+          il villaggio discute e vota per eliminare chi sospetta essere un lupo. Nessuno conosce il ruolo
+          degli altri: bisogna osservare, ragionare e convincere.</p>
+        <ul class="teams">
+          <li><strong>🏡 Il villaggio</strong> (Cittadini, Veggente, Mago, Medium) vince quando <strong>tutti i lupi sono stati eliminati</strong>.</li>
+          <li><strong>🐺 I lupi</strong> vincono quando <strong>sono tanti quanti gli altri giocatori</strong> (ad esempio 2 lupi contro 2 abitanti).</li>
+        </ul>
+      </section>
+
+      <section>
+        <h3>I ruoli</h3>
+        <ul class="info-roles" id="info-roles"></ul>
+      </section>
+
+      <section>
+        <h3>🌙 La notte</h3>
+        <p>Tutti chiudono gli occhi. Il master chiama i ruoli uno alla volta, in quest'ordine:</p>
+        <ol>
+          <li><strong>I lupi</strong> aprono gli occhi, si riconoscono e indicano insieme la vittima.</li>
+          <li><strong>Il veggente</strong> indica un giocatore e scopre se è un lupo.</li>
+          <li><strong>Il mago</strong> indica la casa da proteggere.</li>
+          <li><strong>Il medium</strong> indica la casa in cui andare.</li>
+        </ol>
+        <p>Il master chiama ogni ruolo anche se chi lo aveva è fuori gioco, così nessuno capisce chi è rimasto.</p>
+      </section>
+
+      <section>
+        <h3>🌅 L'alba</h3>
+        <ul>
+          <li>Se il mago protegge la casa attaccata, <strong>nessuno muore</strong> (nemmeno il medium, se è lì).</li>
+          <li>Altrimenti, se il medium è in visita nella casa attaccata, <strong>muore il medium</strong> al posto del padrone di casa.</li>
+          <li>Altrimenti muore la vittima dei lupi.</li>
+        </ul>
+        <p>Il master annuncia solo chi è morto, non il perché.</p>
+      </section>
+
+      <section>
+        <h3>☀️ Il giorno</h3>
+        <p>Il villaggio discute liberamente, poi ognuno vota chi vuole eliminare (non si può votare se stessi).</p>
+        <ul>
+          <li>Chi riceve <strong>più voti</strong> viene eliminato.</li>
+          <li>In caso di <strong>pareggio</strong> si fa un <strong>ballottaggio</strong> solo tra i giocatori a pari voti.</li>
+          <li>Se anche il ballottaggio finisce in pareggio, quel giorno <strong>nessuno viene eliminato</strong>.</li>
+        </ul>
+        <p>Chi è fuori gioco non parla e non vota. I ruoli dei giocatori eliminati si scoprono solo a fine partita.</p>
+      </section>
+
+      <section>
+        <h3>📱 Le due modalità</h3>
+        <ul>
+          <li><strong>🗣️ Dal vivo</strong>: tutti allo stesso tavolo, serve un master. Ognuno guarda il proprio ruolo
+            sul telefono e lo mette via; il master guida la notte dal suo telefono (cosa dire e chi chiamare),
+            registra le scelte indicate col dito, vede chi muore all'alba e registra il risultato della votazione.</li>
+          <li><strong>📱 A distanza</strong>: ognuno sceglie e vota dal proprio telefono. Il master è facoltativo:
+            senza master, chi ha creato la stanza (l'host) gioca come gli altri e la partita va avanti da sola
+            quando tutti hanno agito.</li>
+        </ul>
+      </section>
+
+      <section>
+        <h3>💡 Consigli</h3>
+        <ul>
+          <li>Non mostrare mai il tuo telefono agli altri.</li>
+          <li>Di notte, a occhi chiusi, nessun rumore e nessun movimento.</li>
+          <li>Servono almeno 5 giocatori, master escluso.</li>
+        </ul>
+      </section>
+    </div>
+  </dialog>
+
   <script type="module" src="app.js"></script>
 </body>
 </html>

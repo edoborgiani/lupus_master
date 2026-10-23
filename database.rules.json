@@ -74,7 +74,7 @@
         "roles": {
           "$uid": {
             ".read": "auth != null && auth.uid === $uid",
-            ".validate": "newData.isString() && newData.val().matches(/^(citizen|wolf|magician|medium)$/)"
+            ".validate": "newData.isString() && newData.val().matches(/^(citizen|wolf|seer|magician|medium)$/)"
           }
         },
         "wolves": {
@@ -93,8 +93,16 @@
         "actions": {
           "$uid": {
             ".read": "auth != null && auth.uid === $uid",
-            ".write": "auth != null && auth.uid === $uid && root.child('lobbies').child($code).child('game').child('mode').val() === 'remote' && root.child('lobbies').child($code).child('game').child('phase').val() === 'night' && root.child('lobbies').child($code).child('game').child('alive').child($uid).val() === true && (root.child('secrets').child($code).child('roles').child($uid).val() === 'magician' || root.child('secrets').child($code).child('roles').child($uid).val() === 'medium')",
+            ".write": "auth != null && auth.uid === $uid && root.child('lobbies').child($code).child('game').child('mode').val() === 'remote' && root.child('lobbies').child($code).child('game').child('phase').val() === 'night' && root.child('lobbies').child($code).child('game').child('alive').child($uid).val() === true && (root.child('secrets').child($code).child('roles').child($uid).val() === 'magician' || root.child('secrets').child($code).child('roles').child($uid).val() === 'medium' || (root.child('secrets').child($code).child('roles').child($uid).val() === 'seer' && !data.exists()))",
             ".validate": "newData.isString() && newData.val() !== $uid && root.child('lobbies').child($code).child('game').child('alive').child(newData.val()).val() === true"
+          }
+        },
+        "visions": {
+          "$uid": {
+            ".read": "auth != null && auth.uid === $uid",
+            "$round": {
+              ".validate": "newData.hasChildren(['target', 'wolf'])"
+            }
           }
         },
         "nightLog": {

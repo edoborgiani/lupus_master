@@ -20,7 +20,8 @@
 //   secrets/{CODE}/roles/{uid}        role id; each player can read only their own
 //   secrets/{CODE}/wolves/{uid}       true; readable by wolves so they know their pack
 //   secrets/{CODE}/wolfVotes/{uid}    tonight's victim chosen by each wolf; readable by wolves
-//   secrets/{CODE}/actions/{uid}      tonight's magician/medium choice; readable by its author
+//   secrets/{CODE}/actions/{uid}      tonight's seer/magician/medium choice; readable by its author
+//   secrets/{CODE}/visions/{uid}/{round}  the seer's answers { target, wolf }; readable by the seer
 //   secrets/{CODE}/nightLog/{round}   what really happened each night, for the master
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
@@ -30,8 +31,8 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
 import { firebaseConfig } from "./firebase-config.js";
 import {
-  ROLES, ROLE_ORDER, suggestedCounts, maxWolves, setupError, formatCounts, dealRoles, aliveIds,
-  livingWithRole, wolfTarget, nightStatus, resolveNight, tallyVotes, closeVote, winner, nightSteps,
+  ROLES, ROLE_ORDER, NIGHT_ROLES, suggestedCounts, maxWolves, setupError, formatCounts, dealRoles, aliveIds,
+  livingWithRole, wolfTarget, nightStatus, seerSees, resolveNight, tallyVotes, closeVote, winner, nightSteps,
 } from "./game.js";
 
 const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ"; // no I/O, avoids confusion with 1/0
@@ -40,7 +41,13 @@ const MIN_PLAYERS = 5; // not counting the master
 const PLAYING = ["assigned", "night", "day", "over"];
 const AUTO_NIGHT_DELAY = 3000; // masterless remote: pause before resolving a complete night
 const AUTO_VOTE_DELAY = 5000;  // ... and before closing a vote everyone has cast, so votes can still change
-const STEP_LABELS = { sleep: "Sleep", wolves: "🐺 Wolves", magician: "🪄 Magician", medium: "🔮 Medium", dawn: "🌅 Dawn" };
+const STEP_LABELS = { sleep: "Sonno", wolves: "🐺 Lupi", seer: "👁️ Veggente", magician: "🪄 Mago", medium: "🔮 Medium", dawn: "🌅 Alba" };
+const NIGHT_PROMPTS = {
+  seer: "Veggente, apri gli occhi… chi vuoi scoprire stanotte?",
+  magician: "Mago, apri gli occhi… quale casa proteggi stanotte?",
+  medium: "Medium, apri gli occhi… a casa di chi vai stanotte?",
+};
+const NIGHT_VERBS = { seer: "guarda", magician: "protegge", medium: "va da" };
 
 const $ = (sel) => document.querySelector(sel);
 
@@ -83,7 +90,8 @@ const subs = {};          // active secret listeners by key
 let myRole;               // undefined = loading, null = not in this game
 let pack = null;          // wolves' uids, if I'm a wolf
 let wolfVotes = {};       // wolves only: tonight's picks of the pack
-let myAction = null;      // magician/medium: tonight's choice
+let myAction = null;      // seer/magician/medium: tonight's choice
+let visions = {};         // seer only: { round: { target, wolf } }
 let secrets = null;       // controller only: everything under secrets/{CODE}
 let setup = null;         // controller only: mode and role counts being chosen
 let revealed = false;
@@ -95,6 +103,7 @@ let tieMode = false;
 // masterless remote: pending automatic step
 let autoKey = null;
 let autoTimer = null;
+let visionKey = null;     // seer answer being written, to avoid writing it twice
 
 const lobbyRef = (...parts) => ref(db, ["lobbies", code, ...parts].join("/"));
 const nameKey = (name) => encodeURIComponent(name.trim().toLowerCase()).replace(/\./g, "%2E");
@@ -104,11 +113,13 @@ const controllerId = () => lobby?.masterId || lobby?.hostId || null;
 const isController = () => !!uid && controllerId() === uid;
 const isHostOnly = () => isController() && !isMaster(); // masterless remote: the host also plays
 const playerIds = () => Object.keys(players()).filter((id) => id !== lobby.masterId);
-const playerName = (id) => players()[id]?.name || "(left)";
+const playerName = (id) => players()[id]?.name || "(uscito)";
 const listNames = (ids) => ids.map(playerName).join(", ");
 const game = () => lobby?.game || null;
 const alive = () => game()?.alive || {};
 const logEntries = () => Object.values(game()?.log || {});
+const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+const visionText = (v) => `${playerName(v.target)} ${v.wolf ? "è un lupo! 🐺" : "non è un lupo."}`;
 
 // ---------- screens ----------
 
@@ -128,9 +139,9 @@ function openProfile() {
   const me = players()[uid];
   $("#input-name").value = me?.name || store("lupus.lastName") || "";
   $("#input-master").checked = lobby.masterId === uid;
-  $("#btn-profile-submit").textContent = joined ? "Save" : "Enter lobby";
-  $("#btn-profile-cancel").textContent = joined ? "Cancel" : "Back";
-  $("#profile-error").textContent = lobby.game && !joined ? "A game is already in progress in this lobby." : "";
+  $("#btn-profile-submit").textContent = joined ? "Salva" : "Entra nella stanza";
+  $("#btn-profile-cancel").textContent = joined ? "Annulla" : "Indietro";
+  $("#profile-error").textContent = lobby.game && !joined ? "In questa stanza c'è già una partita in corso." : "";
   renderMasterToggle();
   show("profile");
   if (!$("#input-name").value) $("#input-name").focus();
@@ -146,8 +157,8 @@ function renderMasterToggle() {
   if (takenByOther) input.checked = false;
   input.closest(".toggle").classList.toggle("disabled", takenByOther);
   $("#master-hint").textContent = takenByOther
-    ? `${master?.name || "Someone"} is already the game master.`
-    : "The master narrates the game and doesn't play a role. Optional in remote games.";
+    ? `${master?.name || "Qualcuno"} è già il master.`
+    : "Il master racconta la partita e non ha un ruolo. Facoltativo nelle partite a distanza.";
 }
 
 function renderLobby() {
@@ -165,11 +176,11 @@ function renderLobby() {
 
   const hasMaster = list.some((p) => p.isMaster);
   const playing = list.length - hasMaster;
-  $("#player-count").textContent = `${playing} player${playing === 1 ? "" : "s"}${hasMaster ? " + master" : ""}`;
+  $("#player-count").textContent = plural(playing, "giocatore", "giocatori") + (hasMaster ? " + master" : "");
   $("#no-master").hidden = hasMaster;
   $("#no-master").textContent = lobby.hostId && players()[lobby.hostId]
-    ? `No game master: you can still play a remote game, run by ${playerName(lobby.hostId)}.`
-    : "No game master yet.";
+    ? `Nessun master: potete comunque giocare a distanza, con ${playerName(lobby.hostId)} come host.`
+    : "Ancora nessun master.";
 }
 
 const isOnline = (id) => !!lobby.presence?.[id];
@@ -179,14 +190,16 @@ function playerRow(id, name) {
   const li = el("li", { class: isDead(id) ? "dead" : "" },
     el("span", { class: "dot" + (isOnline(id) ? "" : " off"), title: isOnline(id) ? "Online" : "Offline" }),
     el("span", { class: "pname" }, name));
-  if (id === uid) li.append(badge("you", "you"));
-  if (isDead(id)) li.append(badge("💀 dead", ""));
+  if (id === uid) li.append(badge("tu", "you"));
+  if (isDead(id)) li.append(badge("💀 fuori gioco", ""));
   return li;
 }
 
 function badge(text, cls) {
   return el("span", { class: `badge ${cls}` }, text);
 }
+
+const roleBadge = (r) => badge(`${ROLES[r].icon} ${ROLES[r].name}`, r === "wolf" ? "wolf" : r === "citizen" ? "" : "special");
 
 function renderConnection() {
   $("#conn-status").hidden = online || !code;
@@ -218,21 +231,21 @@ function renderGame() {
   $("#btn-edit").hidden = !!g;
   $("#btn-leave").hidden = !!g && ctrl;
 
-  const runner = lobby.masterId ? "the master" : `${playerName(lobby.hostId)} (host)`;
+  const runner = lobby.masterId ? "il master" : `${playerName(lobby.hostId)} (host)`;
   if (!phase) {
     if (ctrl) {
       $("#card-start").hidden = false;
       $("#btn-start").disabled = n < MIN_PLAYERS;
-      $("#start-hint").textContent = (n < MIN_PLAYERS ? `Waiting for players: ${n} of at least ${MIN_PLAYERS}.` : `${n} players ready.`)
-        + (master ? "" : " Without a master you play a remote game, and you play too.");
+      $("#start-hint").textContent = (n < MIN_PLAYERS ? `In attesa di giocatori: ${n} su almeno ${MIN_PLAYERS}.` : `${n} giocatori pronti.`)
+        + (master ? "" : " Senza master si gioca a distanza, e giochi anche tu.");
     } else {
-      wait(controllerId() ? `Waiting for ${runner} to start the game…` : "Waiting for a game master to join…");
+      wait(controllerId() ? `In attesa che ${runner} inizi la partita…` : "In attesa di un master…");
     }
     return;
   }
   if (phase === "setup") {
     if (ctrl) renderSetup(n);
-    else wait(`${runner[0].toUpperCase()}${runner.slice(1)} is choosing the roles…`);
+    else wait(lobby.masterId ? "Il master sta scegliendo i ruoli…" : `${playerName(lobby.hostId)} sta scegliendo i ruoli…`);
     return;
   }
 
@@ -245,9 +258,9 @@ function renderGame() {
         : { assigned: masterAssigned, night: masterNight, day: renderDay, over: renderOver })[phase]();
     }
   } else if (myRole === undefined) {
-    wait("Loading your role…");
+    wait("Caricamento del tuo ruolo…");
   } else if (myRole === null) {
-    wait("A game is in progress without you. Wait for the next one!");
+    wait("C'è una partita in corso senza di te. Aspetta la prossima!");
   } else {
     renderMyRole();
     (live
@@ -255,6 +268,7 @@ function renderGame() {
       : { assigned: playerAssigned, night: playerNight, day: renderDay, over: renderOver })[phase]();
   }
   renderLog();
+  if (ctrl && !live) answerSeer();
   if (isHostOnly()) autoAdvance();
 }
 
@@ -301,29 +315,30 @@ function pickLocal(id) {
 
 function renderSetup(n) {
   const hasMaster = !!lobby.masterId;
+  const specials = (s) => s.wolf + s.seer + s.magician + s.medium;
   if (!setup || setup.n !== n) {
     // keep the controller's choice if it still fits the new player count, otherwise start from the suggestion
-    const keep = setup && n - setup.wolf - setup.magician - setup.medium >= 0;
+    const keep = setup && n - specials(setup) >= 0;
     const mode = setup?.mode;
-    setup = keep ? { ...setup, citizen: n - setup.wolf - setup.magician - setup.medium } : suggestedCounts(n);
+    setup = keep ? { ...setup, citizen: n - specials(setup) } : suggestedCounts(n);
     setup.n = n;
     setup.mode = mode;
   }
   if (!setup.mode || (setup.mode === "live" && !hasMaster)) setup.mode = hasMaster ? "live" : "remote";
 
   $("#card-setup").hidden = false;
-  $("#setup-total").textContent = `${n} players`;
+  $("#setup-total").textContent = `${n} giocatori`;
   for (const input of document.querySelectorAll('input[name="mode"]')) {
     input.checked = input.value === setup.mode;
     input.disabled = input.value === "live" && !hasMaster;
   }
   $("#mode-live").classList.toggle("disabled", !hasMaster);
-  $("#mode-live").title = hasMaster ? "" : "Live games need a game master";
-  $("#setup-suggestion").textContent = `Suggested for ${n} players: ${formatCounts(suggestedCounts(n))}.`;
+  $("#mode-live").title = hasMaster ? "" : "Le partite dal vivo hanno bisogno di un master";
+  $("#setup-suggestion").textContent = `Suggeriti per ${n} giocatori: ${formatCounts(suggestedCounts(n))}.`;
 
   $("#role-counters").replaceChildren(...ROLE_ORDER.map((r) => {
     const role = ROLES[r];
-    const hint = r === "citizen" ? "Fill the remaining places" : role.max === 1 ? "Max 1" : `Max ${maxWolves(n)}`;
+    const hint = r === "citizen" ? "Riempiono i posti rimasti" : role.max === 1 ? "Max 1" : `Max ${maxWolves(n)}`;
     const out = el("output", {}, String(setup[r]));
     let stepper;
     if (r === "citizen") {
@@ -331,9 +346,9 @@ function renderSetup(n) {
     } else {
       const max = Math.min(role.max ?? Infinity, r === "wolf" ? maxWolves(n) : Infinity);
       stepper = el("span", { class: "stepper" },
-        stepButton("−", `Fewer ${role.plural}`, setup[r] <= (role.min ?? 0), () => changeCount(r, -1)),
+        stepButton("−", `Meno ${role.plural}`, setup[r] <= (role.min ?? 0), () => changeCount(r, -1)),
         out,
-        stepButton("+", `More ${role.plural}`, setup[r] >= max || setup.citizen <= 0, () => changeCount(r, +1)));
+        stepButton("+", `Più ${role.plural}`, setup[r] >= max || setup.citizen <= 0, () => changeCount(r, +1)));
     }
     return el("li", { class: "role-row" },
       el("span", { class: "role-icon" }, role.icon),
@@ -365,15 +380,18 @@ function renderMyRole() {
   btn.setAttribute("aria-expanded", String(revealed));
   btn.classList.toggle("team-wolves", role.team === "wolves");
   $("#role-icon").textContent = role.icon;
-  $("#role-name").textContent = isDead(uid) ? `${role.name} (dead)` : role.name;
+  $("#role-name").textContent = isDead(uid) ? `${role.name} (fuori gioco)` : role.name;
   $("#role-desc").textContent = role.desc;
-  let packText = "";
+  let extra = "";
   if (myRole === "wolf" && pack) {
     const others = pack.filter((id) => id !== uid);
-    packText = others.length ? `Your pack: ${listNames(others)}` : "You are the only wolf.";
+    extra = others.length ? `Il tuo branco: ${listNames(others)}` : "Sei l'unico lupo.";
+  } else if (myRole === "seer") {
+    const seen = Object.entries(visions).sort(([a], [b]) => a - b);
+    extra = seen.length ? `Le tue visioni: ${seen.map(([r, v]) => `notte ${r}, ${visionText(v)}`).join(" · ")}` : "";
   }
-  $("#role-pack").textContent = packText;
-  $("#game-counts").textContent = game().counts ? `In this game: ${formatCounts(game().counts)}` : "";
+  $("#role-pack").textContent = extra;
+  $("#game-counts").textContent = game().counts ? `In questa partita: ${formatCounts(game().counts)}` : "";
 }
 
 function renderMasterRoles() {
@@ -383,7 +401,7 @@ function renderMasterRoles() {
     (isDead(a) - isDead(b)) || (ROLE_ORDER.indexOf(ra) - ROLE_ORDER.indexOf(rb)) || playerName(a).localeCompare(playerName(b)));
   $("#master-role-list").replaceChildren(...entries.map(([id, r]) => {
     const li = playerRow(id, playerName(id));
-    li.append(badge(`${ROLES[r].icon} ${ROLES[r].name}`, r === "wolf" ? "wolf" : r === "citizen" ? "" : "special"));
+    li.append(roleBadge(r));
     return li;
   }));
 }
@@ -392,26 +410,26 @@ function renderMasterRoles() {
 
 function masterAssigned() {
   const live = game().mode === "live";
-  phaseCard("", "Roles dealt",
+  phaseCard("", "Ruoli distribuiti",
     text(live
-      ? "Ask everyone to check their role in secret on their phone, then put the phones away. You will run the night from here."
-      : "Ask everyone to check their role in secret. When you are ready, start the first night."),
-    action("🌙 Start night 1", run(startNight)));
+      ? "Chiedi a tutti di guardare il proprio ruolo di nascosto e poi di mettere via il telefono. La notte la guidi tu da qui."
+      : "Chiedi a tutti di guardare il proprio ruolo di nascosto. Quando siete pronti, inizia la prima notte."),
+    action("🌙 Inizia la notte 1", run(startNight)));
 }
 
 function playerAssigned() {
   const live = game().mode === "live";
-  phaseCard("", "Roles dealt",
+  phaseCard("", "Ruoli distribuiti",
     text(live
-      ? "Check your role below without letting anyone see it, then put your phone away: the master runs the game out loud."
-      : "Check your role below without letting anyone see it. The first night starts soon."),
-    hostTools(action("🌙 Start night 1", run(startNight))));
+      ? "Guarda il tuo ruolo qui sotto senza farlo vedere a nessuno, poi metti via il telefono: il master guida la partita a voce."
+      : "Guarda il tuo ruolo qui sotto senza farlo vedere a nessuno. La prima notte sta per iniziare."),
+    hostTools(action("🌙 Inizia la notte 1", run(startNight))));
 }
 
 /** Buttons only the host sees in a masterless remote game. */
 function hostTools(...buttons) {
   if (!isHostOnly()) return null;
-  return el("div", { class: "host-tools" }, text("You are the host of this game.", "muted small"), buttons);
+  return el("div", { class: "host-tools" }, text("Sei l'host di questa partita.", "muted small"), buttons);
 }
 
 // --- night, live mode (master) ---
@@ -423,60 +441,69 @@ function liveNight() {
   const step = steps.includes(g.step) ? g.step : "sleep";
   const idx = steps.indexOf(step);
   const go = (updates = {}) => update(ref(db), { ...updates, [gamePath("step")]: steps[idx + 1] });
-  const back = idx > 0 && step !== "dawn"
-    ? action("← Back", run(() => set(ref(db, gamePath("step")), steps[idx - 1])), { cls: "link" })
+  const back = idx > 0
+    ? action("← Indietro", run(() => set(ref(db, gamePath("step")), steps[idx - 1])), { cls: "link" })
     : null;
   const progress = el("ul", { class: "steps" }, steps.map((s, i) =>
     el("li", { class: i === idx ? "on" : i < idx ? "done" : "" }, STEP_LABELS[s])));
   const living = aliveIds(alive());
-  const title = `🌙 Night ${g.round}`;
+  const title = `🌙 Notte ${g.round}`;
 
   if (step === "sleep") {
     return phaseCard("night", title, progress,
-      say("The night falls on the village. Everyone, close your eyes."),
-      action("Next: call the wolves", run(() => go())));
+      say("Scende la notte sul villaggio. Tutti chiudono gli occhi."),
+      action("Avanti: chiama i lupi", run(() => go())));
   }
 
   if (step === "wolves") {
     const wolves = livingWithRole(roles, alive(), "wolf");
     const prey = living.filter((id) => roles[id] !== "wolf");
     return phaseCard("night", title, progress,
-      say("Wolves, open your eyes… and choose your victim."),
-      text(`🐺 ${wolves.length === 1 ? "The wolf is" : "The wolves are"} ${listNames(wolves)}. Tap the player they point at:`),
+      say("Lupi, aprite gli occhi… e scegliete la vostra vittima."),
+      text(`🐺 ${wolves.length === 1 ? "Il lupo è" : "I lupi sono"} ${listNames(wolves)}. Tocca il giocatore che indicano:`),
       choiceList(prey, liveSel, pickLocal),
-      action(liveSel ? `Confirm: the wolves attack ${playerName(liveSel)}` : "Select the victim", run(() =>
+      action(liveSel ? `Conferma: i lupi attaccano ${playerName(liveSel)}` : "Scegli la vittima", run(() =>
         go({ [`secrets/${code}/wolfVotes`]: Object.fromEntries(wolves.map((w) => [w, liveSel])) })), { disabled: !liveSel }),
-      text("Then: “Wolves, close your eyes.”", "muted small"),
+      text("Poi: “Lupi, chiudete gli occhi.”", "muted small"),
       back);
   }
 
-  if (step === "magician" || step === "medium") {
+  if (NIGHT_ROLES.includes(step)) {
     const role = ROLES[step];
     const [holder] = livingWithRole(roles, alive(), step);
-    const prompt = step === "magician" ? "Magician, open your eyes… whose house do you protect tonight?"
-      : "Medium, open your eyes… whose house do you visit tonight?";
+    const roleName = role.name.toLowerCase();
     if (!holder) {
-      return phaseCard("night", title, progress, say(prompt),
-        text(`${role.icon} The ${role.name.toLowerCase()} is dead. Call them anyway, so nobody notices, wait a few seconds, then continue.`),
-        action("Continue", run(() => go())), back);
+      return phaseCard("night", title, progress, say(NIGHT_PROMPTS[step]),
+        text(`${role.icon} Il ${roleName} è fuori gioco. Chiamalo comunque, così nessuno se ne accorge, aspetta qualche secondo e continua.`),
+        action("Continua", run(() => go())), back);
     }
-    return phaseCard("night", title, progress, say(prompt),
-      text(`${role.icon} ${playerName(holder)} is the ${role.name.toLowerCase()}. Tap the player they point at:`),
+    const updates = () => {
+      const u = { [`secrets/${code}/actions/${holder}`]: liveSel };
+      if (step === "seer") u[`secrets/${code}/visions/${holder}/${g.round}`] = { target: liveSel, wolf: seerSees(roles, liveSel) };
+      return u;
+    };
+    const answer = step === "seer" && liveSel
+      ? el("p", { class: "vision" + (seerSees(roles, liveSel) ? " wolf" : "") },
+        seerSees(roles, liveSel) ? "👍 Sì, è un lupo" : "👎 No, non è un lupo")
+      : null;
+    return phaseCard("night", title, progress, say(NIGHT_PROMPTS[step]),
+      text(`${role.icon} ${playerName(holder)} è il ${roleName}. Tocca il giocatore che indica:`),
       choiceList(living.filter((id) => id !== holder), liveSel, pickLocal),
-      action(liveSel ? `Confirm: ${step === "magician" ? "protects" : "visits"} ${playerName(liveSel)}` : "Select a player", run(() =>
-        go({ [`secrets/${code}/actions/${holder}`]: liveSel })), { disabled: !liveSel }),
-      text(`Then: “${role.name}, close your eyes.”`, "muted small"),
+      answer,
+      answer && text("Fai un cenno al veggente: pollice in su se è un lupo, in giù se non lo è.", "muted small"),
+      action(liveSel ? `Conferma: ${NIGHT_VERBS[step]} ${playerName(liveSel)}` : "Scegli un giocatore", run(() => go(updates())), { disabled: !liveSel }),
+      text(`Poi: “${role.name}, chiudi gli occhi.”`, "muted small"),
       back);
   }
 
   // dawn
   const res = resolveNight(roles, alive(), secrets.wolfVotes || {}, secrets.actions || {});
   return phaseCard("night", title, progress,
-    say("The sun rises. Everyone, open your eyes."),
-    el("p", { class: "big-news" }, res.victim ? `☠️ ${playerName(res.victim)} died tonight` : "🌅 Nobody died tonight"),
-    res.reason !== "killed" && text(`🔒 Only for you: ${describeNight(res)}`, "secret-note"),
-    action("Announce it and start the day", run(resolveNightNow)),
-    action("← Back", run(() => set(ref(db, gamePath("step")), steps[idx - 1])), { cls: "link" }));
+    say("Sorge il sole. Tutti aprono gli occhi."),
+    el("p", { class: "big-news" }, res.victim ? `☠️ Vittima della notte: ${playerName(res.victim)}` : "🌅 Stanotte nessuno è morto"),
+    res.reason !== "killed" && text(`🔒 Solo per te: ${describeNight(res)}`, "secret-note"),
+    action("Annuncialo e inizia il giorno", run(resolveNightNow)),
+    back);
 }
 
 // --- day, live mode (master) ---
@@ -486,7 +513,7 @@ function liveDay() {
   const vote = g.vote || { ballot: 1 };
   const living = aliveIds(alive());
   const candidates = vote.candidates ? Object.keys(vote.candidates) : living;
-  const title = `☀️ Day ${g.round}`;
+  const title = `☀️ Giorno ${g.round}`;
   const news = nightNews();
 
   if (vote.done) return dayResult(title, news, vote);
@@ -498,41 +525,41 @@ function liveDay() {
       renderGame();
     };
     return phaseCard("day", title, news,
-      text("Select the players who tied with the most votes:"),
+      text("Seleziona i giocatori a pari voti:"),
       choiceList(candidates, tieSel, toggle),
-      action(tieSel.size >= 2 ? `Start the run-off between ${listNames([...tieSel])}` : "Select at least 2 players",
+      action(tieSel.size >= 2 ? `Ballottaggio tra ${listNames([...tieSel])}` : "Seleziona almeno 2 giocatori",
         run(() => applyVoteResult({ runoff: [...tieSel] })), { disabled: tieSel.size < 2 }),
-      action("Cancel", () => { tieMode = false; renderGame(); }, { cls: "link" }));
+      action("Annulla", () => { tieMode = false; renderGame(); }, { cls: "link" }));
   }
 
   const runoff = vote.ballot === 2;
   return phaseCard("day", title, news,
-    say(runoff ? `Run-off between ${listNames(candidates)}: vote again!` : "Discuss… then everyone points at who they think is a wolf."),
-    text("Tap the player with the most votes:"),
+    say(runoff ? `Ballottaggio tra ${listNames(candidates)}: si vota di nuovo!` : "Discutete… poi ognuno indichi chi pensa sia un lupo."),
+    text("Tocca il giocatore con più voti:"),
     choiceList(candidates, liveSel, pickLocal),
-    action(liveSel ? `Eliminate ${playerName(liveSel)}` : "Select a player", run(() => applyVoteResult({ eliminated: liveSel })), { disabled: !liveSel }),
+    action(liveSel ? `Elimina ${playerName(liveSel)}` : "Scegli un giocatore", run(() => applyVoteResult({ eliminated: liveSel })), { disabled: !liveSel }),
     runoff
-      ? action("Tie again: nobody is eliminated", run(() => applyVoteResult({ eliminated: null })), { cls: "link" })
-      : action("It's a tie", () => { tieMode = true; renderGame(); }, { cls: "link" }));
+      ? action("Ancora pareggio: nessuno viene eliminato", run(() => applyVoteResult({ eliminated: null })), { cls: "link" })
+      : action("C'è un pareggio", () => { tieMode = true; renderGame(); }, { cls: "link" }));
 }
 
 // --- live mode (players' phones) ---
 
 function livePlayerNight() {
   const g = game();
-  phaseCard("night", `🌙 Night ${g.round}`,
-    text(isDead(uid) ? "You are dead: keep your eyes closed and stay silent." : "Put your phone away, close your eyes and follow the master's voice."));
+  phaseCard("night", `🌙 Notte ${g.round}`,
+    text(isDead(uid) ? "Sei fuori gioco: tieni gli occhi chiusi e resta in silenzio." : "Metti via il telefono, chiudi gli occhi e segui la voce del master."));
 }
 
 function livePlayerDay() {
   const g = game();
   const vote = g.vote || { ballot: 1 };
-  const title = `☀️ Day ${g.round}`;
+  const title = `☀️ Giorno ${g.round}`;
   if (vote.done) return dayResult(title, nightNews(), vote);
   phaseCard("day", title, nightNews(),
     text(vote.ballot === 2
-      ? `Run-off between ${listNames(Object.keys(vote.candidates || {}))}: vote again out loud.`
-      : "Discuss and vote out loud. The master records the result."));
+      ? `Ballottaggio tra ${listNames(Object.keys(vote.candidates || {}))}: votate di nuovo a voce.`
+      : "Discutete e votate a voce. Il master registra il risultato."));
 }
 
 // --- night, remote mode ---
@@ -548,53 +575,54 @@ function masterNight() {
   const line = (icon, done, content) => el("li", {}, el("span", { class: "who" }, icon), el("span", { class: done ? "ok" : "pending" }, content));
   const picks = livingWolves.map((w) => `${playerName(w)} → ${wv[w] ? playerName(wv[w]) : "…"}`).join(", ");
   const lines = [
-    line("🐺", st.wolves.agreed, st.wolves.agreed ? `Wolves chose ${playerName(st.wolves.target)}` : `Wolves deciding: ${picks}`),
+    line("🐺", st.wolves.agreed, st.wolves.agreed ? `I lupi hanno scelto ${playerName(st.wolves.target)}` : `I lupi stanno decidendo: ${picks}`),
   ];
-  if (g.counts?.magician) {
-    lines.push(line("🪄", !st.magician || !!acts[st.magician],
-      !st.magician ? "The magician is dead" : acts[st.magician]
-        ? `${playerName(st.magician)} protects ${playerName(acts[st.magician])}` : `Waiting for ${playerName(st.magician)} (magician)`));
-  }
-  if (g.counts?.medium) {
-    lines.push(line("🔮", !st.medium || !!acts[st.medium],
-      !st.medium ? "The medium is dead" : acts[st.medium]
-        ? `${playerName(st.medium)} visits ${playerName(acts[st.medium])}` : `Waiting for ${playerName(st.medium)} (medium)`));
+  for (const r of NIGHT_ROLES) {
+    if (!g.counts?.[r]) continue;
+    const holder = st[r];
+    const name = ROLES[r].name.toLowerCase();
+    let content;
+    if (!holder) content = `Il ${name} è fuori gioco`;
+    else if (!acts[holder]) content = `In attesa di ${playerName(holder)} (${name})`;
+    else if (r === "seer") content = `${playerName(holder)} guarda ${playerName(acts[holder])}: ${seerSees(roles, acts[holder]) ? "è un lupo" : "non è un lupo"}`;
+    else content = `${playerName(holder)} ${NIGHT_VERBS[r]} ${playerName(acts[holder])}`;
+    lines.push(line(ROLES[r].icon, !holder || !!acts[holder], content));
   }
 
   const preview = describeNight(resolveNight(roles, alive(), wv, acts));
-  phaseCard("night", `🌙 Night ${g.round}`,
-    text("Everyone closes their eyes. Players with a night role choose on their phone."),
+  phaseCard("night", `🌙 Notte ${g.round}`,
+    text("Tutti chiudono gli occhi. Chi ha un ruolo notturno sceglie dal proprio telefono."),
     el("ul", { class: "status" }, lines),
-    text(`If you resolve now: ${preview}`, "preview"),
-    action("🌅 Dawn: resolve the night", () => {
-      if (!st.complete && !confirm("Not everyone has chosen yet. Missing choices count as no action. Resolve anyway?")) return;
+    text(`Se risolvi ora: ${preview}`, "preview"),
+    action("🌅 Alba: risolvi la notte", () => {
+      if (!st.complete && !confirm("Non tutti hanno ancora scelto. Le scelte mancanti valgono come nessuna azione. Risolvere comunque?")) return;
       run(resolveNightNow)();
     }));
 }
 
 function describeNight(res) {
   switch (res.reason) {
-    case "protected": return `the wolves attack ${playerName(res.attacked)}, but the magician protects the house. Nobody dies.`;
-    case "medium": return `the wolves attack ${playerName(res.attacked)}; the medium is there and dies in their place.`;
-    case "killed": return `${playerName(res.victim)} is killed by the wolves.`;
-    default: return "the wolves have not agreed on a victim. Nobody dies.";
+    case "protected": return `i lupi attaccano ${playerName(res.attacked)}, ma il mago protegge la casa. Nessuno muore.`;
+    case "medium": return `i lupi attaccano ${playerName(res.attacked)}; il medium è lì e muore al suo posto.`;
+    case "killed": return `i lupi uccidono ${playerName(res.victim)}.`;
+    default: return "i lupi non si sono messi d'accordo su una vittima. Nessuno muore.";
   }
 }
 
-const forceDawn = () => hostTools(action("Someone isn't responding? Resolve the night now", () => {
-  if (confirm("Resolve the night now? Missing choices count as no action.")) run(resolveNightNow)();
+const forceDawn = () => hostTools(action("Qualcuno non risponde? Risolvi la notte adesso", () => {
+  if (confirm("Risolvere la notte adesso? Le scelte mancanti valgono come nessuna azione.")) run(resolveNightNow)();
 }, { cls: "link" }));
 
 function playerNight() {
   const g = game();
-  const title = `🌙 Night ${g.round}`;
+  const title = `🌙 Notte ${g.round}`;
   const living = aliveIds(alive());
   const others = living.filter((id) => id !== uid);
 
-  if (isDead(uid)) return phaseCard("night", title, text("You are dead. Stay silent and enjoy the rest of the game."), forceDawn());
+  if (isDead(uid)) return phaseCard("night", title, text("Sei fuori gioco. Resta in silenzio e goditi il resto della partita."), forceDawn());
 
   if (myRole === "wolf") {
-    if (!pack) return phaseCard("night", title, text("Loading your pack…"));
+    if (!pack) return phaseCard("night", title, text("Caricamento del branco…"));
     const packRoles = Object.fromEntries(pack.map((id) => [id, "wolf"]));
     const { target, agreed } = wolfTarget(packRoles, alive(), wolfVotes);
     const prey = living.filter((id) => !pack.includes(id));
@@ -603,19 +631,34 @@ function playerNight() {
       return who.length ? el("span", { class: "voters" }, `🐺 ${listNames(who)}`) : null;
     };
     return phaseCard("night", title,
-      text(agreed ? `The pack agrees: ${playerName(target)} is tonight's victim.` : "Choose tonight's victim. All living wolves must choose the same player."),
+      text(agreed ? `Il branco è d'accordo: stanotte tocca a ${playerName(target)}.` : "Scegli la vittima di stanotte. Tutti i lupi vivi devono scegliere lo stesso giocatore."),
       choiceList(prey, wolfVotes[uid], (id) => set(ref(db, `secrets/${code}/wolfVotes/${uid}`), id), pickers),
+      forceDawn());
+  }
+  if (myRole === "seer") {
+    const vision = visions[g.round];
+    if (!myAction) {
+      return phaseCard("night", title, text("Scegli un giocatore: scoprirai se è un lupo. Una sola visione per notte, e non si può cambiare."),
+        choiceList(others, null, (id) => {
+          if (!confirm(`Vuoi scoprire ${playerName(id)}? Non potrai cambiare.`)) return;
+          return set(ref(db, `secrets/${code}/actions/${uid}`), id);
+        }),
+        forceDawn());
+    }
+    return phaseCard("night", title,
+      vision ? el("p", { class: "vision" + (vision.wolf ? " wolf" : "") }, visionText(vision)) : text("Gli spiriti stanno rispondendo…"),
+      text("Tieni per te la tua visione. Ora chiudi gli occhi fino al mattino."),
       forceDawn());
   }
   if (myRole === "magician" || myRole === "medium") {
     const prompt = myRole === "magician"
-      ? "Choose whose house to protect tonight. Nobody in it can be killed."
-      : "Choose whose house to visit tonight. If the wolves attack it, you die in their place.";
+      ? "Scegli la casa da proteggere stanotte. Nessuno al suo interno può essere ucciso."
+      : "Scegli la casa da visitare stanotte. Se i lupi la attaccano, muori tu al posto del padrone di casa.";
     return phaseCard("night", title, text(prompt),
       choiceList(others, myAction, (id) => set(ref(db, `secrets/${code}/actions/${uid}`), id)),
       forceDawn());
   }
-  phaseCard("night", title, text("Close your eyes… The village sleeps until morning."), forceDawn());
+  phaseCard("night", title, text("Chiudi gli occhi… Il villaggio dorme fino al mattino."), forceDawn());
 }
 
 // --- day, remote mode ---
@@ -624,17 +667,18 @@ function nightNews() {
   const g = game();
   const night = logEntries().find((e) => e.type === "night" && e.round === g.round);
   return el("p", { class: "news" + (night?.victim ? " death" : "") },
-    night?.victim ? `☠️ ${playerName(night.victim)} was killed during the night.` : "🌅 Nobody died during the night.");
+    night?.victim ? `☠️ Vittima della notte: ${playerName(night.victim)}.` : "🌅 Stanotte nessuno è morto.");
 }
 
 function dayResult(title, news, vote) {
   const g = game();
   const result = vote.eliminated
-    ? `⚖️ ${playerName(vote.eliminated)} was eliminated by the village.`
-    : "⚖️ Nobody is eliminated today.";
-  const next = action(`🌙 Start night ${g.round + 1}`, run(startNight));
+    ? `⚖️ Il villaggio ha eliminato ${playerName(vote.eliminated)}.`
+    : "⚖️ Oggi nessuno viene eliminato.";
+  const next = action(`🌙 Inizia la notte ${g.round + 1}`, run(startNight));
   return phaseCard("day", title, news, el("p", { class: "news death" }, result),
-    isMaster() ? next : isHostOnly() ? hostTools(next) : text(`Waiting for ${lobby.masterId ? "the master" : playerName(lobby.hostId)} to start the night…`));
+    isMaster() ? next : isHostOnly() ? hostTools(next)
+      : text(`In attesa che ${lobby.masterId ? "il master" : playerName(lobby.hostId)} inizi la notte…`));
 }
 
 function renderDay() {
@@ -646,7 +690,7 @@ function renderDay() {
   const votes = lobby.votes || {};
   const { counts } = tallyVotes(votes, alive(), vote.candidates || null);
   const voted = votedCount(votes, vote, living);
-  const title = `☀️ Day ${g.round}`;
+  const title = `☀️ Giorno ${g.round}`;
 
   if (vote.done) return dayResult(title, nightNews(), vote);
 
@@ -663,19 +707,20 @@ function renderDay() {
     voters, (id) => el("span", { class: "tally" }, String(counts[id] || 0)));
 
   const intro = vote.ballot === 2
-    ? `Run-off between ${listNames(candidates)}: vote again, only among them.`
-    : canVote ? "Discuss, then vote who you think is a wolf. You can change your vote until the vote closes."
-      : "The village is voting. Votes are public.";
+    ? `Ballottaggio tra ${listNames(candidates)}: votate di nuovo, solo tra loro.`
+    : canVote ? "Discutete, poi vota chi pensi sia un lupo. Puoi cambiare il voto finché la votazione non si chiude."
+      : "Il villaggio sta votando. I voti sono pubblici.";
   const everyone = voted === living.length;
   phaseCard("day", title, nightNews(), text(intro), list,
-    text(everyone && !lobby.masterId ? "Everyone has voted: the vote closes in a few seconds…" : `${voted} of ${living.length} living players have voted.`, "muted small"),
-    master && action("⚖️ Close the vote", () => {
-      if (!everyone && !confirm("Not everyone has voted yet. Close the vote anyway?")) return;
+    text(everyone && !lobby.masterId ? "Hanno votato tutti: la votazione si chiude tra pochi secondi…"
+      : `Hanno votato ${voted} giocatori vivi su ${living.length}.`, "muted small"),
+    master && action("⚖️ Chiudi la votazione", () => {
+      if (!everyone && !confirm("Non hanno ancora votato tutti. Chiudere comunque la votazione?")) return;
       run(closeVoteNow)();
     }),
-    isDead(uid) && text("You are dead, so you can't vote.", "muted small"),
-    hostTools(action("Someone isn't voting? Close the vote now", () => {
-      if (confirm("Close the vote now with the votes cast so far?")) run(closeVoteNow)();
+    isDead(uid) && text("Sei fuori gioco, quindi non puoi votare.", "muted small"),
+    hostTools(action("Qualcuno non vota? Chiudi la votazione adesso", () => {
+      if (confirm("Chiudere adesso la votazione con i voti dati finora?")) run(closeVoteNow)();
     }, { cls: "link" })));
 }
 
@@ -689,15 +734,15 @@ function renderOver() {
   const reveal = g.reveal || {};
   const ids = Object.keys(reveal).sort((a, b) =>
     (ROLE_ORDER.indexOf(reveal[a]) - ROLE_ORDER.indexOf(reveal[b])) || playerName(a).localeCompare(playerName(b)));
-  const back = action("Back to the lobby", run(endGame));
-  phaseCard("", "Game over",
-    el("p", { class: "winner" }, g.winner === "wolves" ? "🐺 The wolves win!" : "🏡 The village wins!"),
+  const back = action("Torna alla stanza", run(endGame));
+  phaseCard("", "Partita finita",
+    el("p", { class: "winner" }, g.winner === "wolves" ? "🐺 Vincono i lupi!" : "🏡 Vince il villaggio!"),
     el("ul", { class: "plain-list" }, ids.map((id) => {
       const li = playerRow(id, playerName(id));
-      li.append(badge(`${ROLES[reveal[id]].icon} ${ROLES[reveal[id]].name}`, reveal[id] === "wolf" ? "wolf" : ""));
+      li.append(roleBadge(reveal[id]));
       return li;
     })),
-    isMaster() ? back : isHostOnly() ? hostTools(back) : text("Waiting for a new game…", "muted small"));
+    isMaster() ? back : isHostOnly() ? hostTools(back) : text("In attesa di una nuova partita…", "muted small"));
 }
 
 // --- history ---
@@ -709,16 +754,35 @@ function renderLog() {
   $("#game-log").replaceChildren(...entries.map((e) => {
     if (e.type === "night") {
       const detail = nightLog[e.round];
-      const secret = detail && detail.reason !== "killed" ? el("span", { class: "secret" }, `🔒 ${describeNight(detail)}`) : null;
-      return el("li", {}, `Night ${e.round}: `,
-        e.victim ? [el("strong", {}, playerName(e.victim)), " was killed"] : "nobody died", secret);
+      const secret = [];
+      if (detail && detail.reason !== "killed") secret.push(`🔒 ${describeNight(detail)}`);
+      if (detail?.seen) secret.push(`🔒 il veggente guarda ${playerName(detail.seen)}: ${detail.seenWolf ? "è un lupo" : "non è un lupo"}.`);
+      return el("li", {}, `Notte ${e.round}: `,
+        e.victim ? ["i lupi uccidono ", el("strong", {}, playerName(e.victim))] : "nessun morto",
+        secret.map((s) => el("span", { class: "secret" }, s)));
     }
-    if (e.runoff) return el("li", {}, `Day ${e.round}: tie between ${listNames(e.runoff)}, run-off`);
-    const votes = e.votes != null ? ` (${e.votes} vote${e.votes === 1 ? "" : "s"})` : "";
-    return el("li", {}, `Day ${e.round}: `,
-      e.eliminated ? [el("strong", {}, playerName(e.eliminated)), ` eliminated${votes}`] : "nobody eliminated");
+    if (e.runoff) return el("li", {}, `Giorno ${e.round}: pareggio tra ${listNames(e.runoff)}, ballottaggio`);
+    const votes = e.votes != null ? ` (${plural(e.votes, "voto", "voti")})` : "";
+    return el("li", {}, `Giorno ${e.round}: `,
+      e.eliminated ? ["il villaggio elimina ", el("strong", {}, playerName(e.eliminated)), votes] : "nessuna eliminazione");
   }));
   $("#card-log").hidden = false;
+}
+
+// ---------- remote: the controller answers the seer as soon as they choose ----------
+
+function answerSeer() {
+  const g = game();
+  if (g?.phase !== "night" || !secrets) return;
+  const roles = secrets.roles || {};
+  const [seer] = livingWithRole(roles, alive(), "seer");
+  const target = seer && secrets.actions?.[seer];
+  if (!target || secrets.visions?.[seer]?.[g.round]) return;
+  const key = `${g.round}:${seer}`;
+  if (visionKey === key) return;
+  visionKey = key;
+  set(ref(db, `secrets/${code}/visions/${seer}/${g.round}`), { target, wolf: seerSees(roles, target) })
+    .catch(() => { visionKey = null; });
 }
 
 // ---------- masterless remote: automatic steps (host's phone only) ----------
@@ -774,8 +838,10 @@ function syncSecrets() {
     pack = null;
     wolfVotes = {};
     myAction = null;
+    visions = {};
     secrets = null;
     revealed = false;
+    visionKey = null;
     cancelAuto();
     if (lobby?.game?.phase !== "setup") setup = null;
     return;
@@ -788,8 +854,9 @@ function syncSecrets() {
     if (myRole === "wolf") {
       subscribe("pack", `secrets/${code}/wolves`, (w) => { pack = Object.keys(w || {}); renderGame(); });
       subscribe("wolfVotes", `secrets/${code}/wolfVotes`, (v) => { wolfVotes = v || {}; renderGame(); });
-    } else if (myRole === "magician" || myRole === "medium") {
+    } else if (NIGHT_ROLES.includes(myRole)) {
       subscribe("action", `secrets/${code}/actions/${uid}`, (v) => { myAction = v; renderGame(); });
+      if (myRole === "seer") subscribe("visions", `secrets/${code}/visions/${uid}`, (v) => { visions = v || {}; renderGame(); });
     }
     renderGame();
   });
@@ -802,13 +869,13 @@ function openLobby(newCode) {
   code = newCode;
   store("lupus.lobby", code);
   history.replaceState(null, "", `${location.pathname}?code=${code}`);
-  unsubLobby = onValue(lobbyRef(), (snap) => onLobby(snap.val()), (err) => goHome(`Could not open lobby: ${err.message}`));
+  unsubLobby = onValue(lobbyRef(), (snap) => onLobby(snap.val()), (err) => goHome(`Impossibile aprire la stanza: ${err.message}`));
   renderConnection();
 }
 
 function onLobby(data) {
   if (!data?.createdAt) {
-    goHome(`No lobby with code ${code}.`);
+    goHome(`Nessuna stanza con il codice ${code}.`);
     return;
   }
   lobby = data;
@@ -878,18 +945,18 @@ async function createLobby() {
       return;
     }
   }
-  throw new Error("Could not find a free lobby code, please retry.");
+  throw new Error("Impossibile trovare un codice libero, riprova.");
 }
 
 async function joinCode(input) {
   const c = input.trim().toUpperCase();
   if (!/^[A-Z]{4}$/.test(c)) {
-    $("#home-error").textContent = "The code is 4 letters.";
+    $("#home-error").textContent = "Il codice è di 4 lettere.";
     return;
   }
   const snap = await get(ref(db, `lobbies/${c}/createdAt`));
   if (!snap.exists()) {
-    goHome(`No lobby with code ${c}.`);
+    goHome(`Nessuna stanza con il codice ${c}.`);
     return;
   }
   $("#home-error").textContent = "";
@@ -898,22 +965,22 @@ async function joinCode(input) {
 
 async function saveProfile(name, wantMaster) {
   const me = players()[uid];
-  if (!me && lobby.game) throw new Error("A game is already in progress in this lobby.");
-  if (!me && Object.keys(players()).length >= MAX_PLAYERS) throw new Error("This lobby is full.");
+  if (!me && lobby.game) throw new Error("In questa stanza c'è già una partita in corso.");
+  if (!me && Object.keys(players()).length >= MAX_PLAYERS) throw new Error("Questa stanza è piena.");
 
   const key = nameKey(name);
   const oldKey = me ? nameKey(me.name) : null;
   const claim = (current) => (current === null || current === uid ? uid : undefined);
 
   const nameTx = await runTransaction(lobbyRef("names", key), claim);
-  if (!nameTx.committed) throw new Error("That name is already taken in this lobby.");
+  if (!nameTx.committed) throw new Error("Questo nome è già usato in questa stanza.");
 
   if (wantMaster) {
     const masterTx = await runTransaction(lobbyRef("masterId"), claim);
     if (!masterTx.committed) {
       if (key !== oldKey) await remove(lobbyRef("names", key));
       const master = players()[masterTx.snapshot.val()];
-      throw new Error(`${master?.name || "Someone"} is already the game master.`);
+      throw new Error(`${master?.name || "Qualcuno"} è già il master.`);
     }
   } else if (lobby.masterId === uid) {
     await remove(lobbyRef("masterId"));
@@ -943,9 +1010,9 @@ const gamePath = (key) => `lobbies/${code}/game/${key}`;
 
 async function assignRoles() {
   const ids = playerIds();
-  const counts = { wolf: setup.wolf, magician: setup.magician, medium: setup.medium, citizen: setup.citizen };
-  const error = setupError(counts, ids.length) || (ids.length < MIN_PLAYERS ? "Not enough players." : "")
-    || (setup.mode === "live" && !lobby.masterId ? "Live games need a game master." : "");
+  const counts = Object.fromEntries(ROLE_ORDER.map((r) => [r, setup[r]]));
+  const error = setupError(counts, ids.length) || (ids.length < MIN_PLAYERS ? "Non ci sono abbastanza giocatori." : "")
+    || (setup.mode === "live" && !lobby.masterId ? "Le partite dal vivo hanno bisogno di un master." : "");
   if (error) throw new Error(error);
 
   const roles = dealRoles(ids, counts, randomInt);
@@ -995,8 +1062,14 @@ function outcome(updates, entry, victim) {
 function resolveNightNow() {
   const g = game();
   if (g?.phase !== "night") return Promise.resolve(); // already resolved (e.g. from another tab)
-  const res = resolveNight(secrets.roles || {}, alive(), secrets.wolfVotes || {}, secrets.actions || {});
-  const updates = { [`secrets/${code}/nightLog/${g.round}`]: compact(res) };
+  const roles = secrets.roles || {};
+  const acts = secrets.actions || {};
+  const res = resolveNight(roles, alive(), secrets.wolfVotes || {}, acts);
+  const [seer] = livingWithRole(roles, alive(), "seer");
+  const seen = seer ? acts[seer] : null;
+  const updates = {
+    [`secrets/${code}/nightLog/${g.round}`]: compact({ ...res, seen, seenWolf: seen ? seerSees(roles, seen) : null }),
+  };
   const won = outcome(updates, { type: "night", round: g.round, victim: res.victim }, res.victim);
   if (!won) {
     updates[gamePath("phase")] = "day";
@@ -1035,6 +1108,26 @@ function endGame() {
   return update(ref(db), { [`secrets/${code}`]: null, [`lobbies/${code}/game`]: null, [`lobbies/${code}/votes`]: null });
 }
 
+// ---------- rules dialog ----------
+
+function setupInfo() {
+  $("#btn-info").addEventListener("click", () => $("#info").showModal());
+  $("#btn-info-close").addEventListener("click", () => $("#info").close());
+  $("#info").addEventListener("click", (e) => { if (e.target === e.currentTarget) e.currentTarget.close(); }); // backdrop
+  renderInfoRoles();
+}
+
+function renderInfoRoles() {
+  $("#info-roles").replaceChildren(...ROLE_ORDER.map((r) => {
+    const role = ROLES[r];
+    return el("li", {},
+      el("div", { class: "role-title" }, `${role.icon} ${role.name}`,
+        badge(role.team === "wolves" ? "🐺 Lupi" : "🏡 Villaggio", `team-tag ${role.team === "wolves" ? "wolf" : ""}`)),
+      el("p", {}, role.desc),
+      el("p", {}, role.info));
+  }));
+}
+
 // ---------- events ----------
 
 function bindEvents() {
@@ -1063,7 +1156,7 @@ function bindEvents() {
     e.preventDefault();
     const name = $("#input-name").value.trim();
     if (!name) {
-      $("#profile-error").textContent = "Please enter a name.";
+      $("#profile-error").textContent = "Inserisci un nome.";
       return;
     }
     const btn = $("#btn-profile-submit");
@@ -1087,7 +1180,7 @@ function bindEvents() {
   $("#btn-edit").addEventListener("click", openProfile);
 
   $("#btn-leave").addEventListener("click", () => {
-    if (confirm("Leave this lobby?")) run(leaveLobby)();
+    if (confirm("Vuoi uscire dalla stanza?")) run(leaveLobby)();
   });
 
   $("#btn-start").addEventListener("click", run(() => set(lobbyRef("game"), { phase: "setup" })));
@@ -1118,7 +1211,7 @@ function bindEvents() {
   });
 
   $("#btn-end-game").addEventListener("click", () => {
-    if (confirm("End this game and go back to the lobby? Roles will be cleared.")) run(endGame)();
+    if (confirm("Terminare la partita e tornare alla stanza? I ruoli verranno cancellati.")) run(endGame)();
   });
 
   $("#btn-reveal").addEventListener("click", () => {
@@ -1129,22 +1222,22 @@ function bindEvents() {
   $("#btn-copy-code").addEventListener("click", async () => {
     try {
       await navigator.clipboard.writeText(code);
-      flash("Code copied!");
+      flash("Codice copiato!");
     } catch {
-      flash(`Code: ${code}`);
+      flash(`Codice: ${code}`);
     }
   });
 
   $("#btn-share").addEventListener("click", async () => {
     const url = `${location.origin}${location.pathname}?code=${code}`;
     if (navigator.share) {
-      try { await navigator.share({ title: "Lupus in Tabula", text: `Join my game! Code ${code}`, url }); }
+      try { await navigator.share({ title: "Lupus in Tabula", text: `Gioca con me! Codice ${code}`, url }); }
       catch { /* user cancelled */ }
       return;
     }
     try {
       await navigator.clipboard.writeText(url);
-      flash("Invite link copied!");
+      flash("Link di invito copiato!");
     } catch {
       flash(url);
     }
@@ -1159,6 +1252,7 @@ function flash(msg) {
 // ---------- boot ----------
 
 async function main() {
+  setupInfo(); // the rules are readable even before connecting
   if (!firebaseConfig.apiKey || firebaseConfig.apiKey.startsWith("YOUR_")) {
     show("setup");
     return;
@@ -1193,5 +1287,5 @@ async function main() {
 main().catch((err) => {
   console.error(err);
   show("home");
-  $("#home-error").textContent = `Could not connect: ${err.message}`;
+  $("#home-error").textContent = `Impossibile connettersi: ${err.message}`;
 });
