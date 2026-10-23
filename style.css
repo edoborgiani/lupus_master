@@ -228,3 +228,7 @@ code { background: var(--bg-2); padding: 1px 6px; border-radius: 6px; font-size:
 .secret-note { color: var(--accent-2); font-size: .9rem; margin: 0 0 14px; }
 .host-tools { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--line); }
 .host-tools p { margin: 0 0 8px; }
+
+.list-head { flex-wrap: wrap; gap: 4px 12px; }
+.list-head h2 { flex: none; }
+.list-head .count { flex: 1; text-align: right; min-width: 0; }

@@ -4,6 +4,19 @@ A web companion for playing **Lupus in Tabula** together. One person creates a l
 shares its 4-letter code (or invite link); everyone joins from their phone, picks a name
 and says whether they're the game master (only one master per lobby).
 
+## How to play
+
+- **Live**: everyone at the same table. Phones only deal the secret roles; the master's phone
+  guides the night step by step (who to call, what to say), records who the wolves, magician
+  and medium point at, shows who died at dawn, and records the day's vote.
+- **Remote**: everyone plays on their own phone (night choices and votes happen in the app).
+  The master is optional: without one, the lobby's host plays too and the game advances by
+  itself once everyone has acted.
+
+Roles: Citizens, Wolves, Magician (protects a house each night, not their own) and Medium
+(visits a house each night and dies in place of the wolves' victim). Most votes is
+eliminated; a tie goes to a run-off; the wolves win when they are as many as the others.
+
 It's a static site (GitHub Pages) backed by **Firebase Realtime Database**, so there is no
 server to run.
 
@@ -42,5 +55,6 @@ Then open http://localhost:8000. Use a private window to simulate a second playe
 ## Files
 
 - `index.html`, `style.css`, `app.js` – the app (plain HTML/CSS/JS, no build step).
+- `game.js` – the game rules (night resolution, votes, win conditions), no Firebase or DOM.
 - `firebase-config.js` – your Firebase project config.
 - `database.rules.json` – security rules to paste into the Firebase console.

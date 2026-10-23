@@ -442,7 +442,7 @@ function liveNight() {
     const prey = living.filter((id) => roles[id] !== "wolf");
     return phaseCard("night", title, progress,
       say("Wolves, open your eyes… and choose your victim."),
-      text(`🐺 The wolves are ${listNames(wolves)}. Tap the player they point at:`),
+      text(`🐺 ${wolves.length === 1 ? "The wolf is" : "The wolves are"} ${listNames(wolves)}. Tap the player they point at:`),
       choiceList(prey, liveSel, pickLocal),
       action(liveSel ? `Confirm: the wolves attack ${playerName(liveSel)}` : "Select the victim", run(() =>
         go({ [`secrets/${code}/wolfVotes`]: Object.fromEntries(wolves.map((w) => [w, liveSel])) })), { disabled: !liveSel }),
@@ -668,7 +668,7 @@ function renderDay() {
       : "The village is voting. Votes are public.";
   const everyone = voted === living.length;
   phaseCard("day", title, nightNews(), text(intro), list,
-    text(everyone && !master ? "Everyone has voted: the vote closes in a few seconds…" : `${voted} of ${living.length} living players have voted.`, "muted small"),
+    text(everyone && !lobby.masterId ? "Everyone has voted: the vote closes in a few seconds…" : `${voted} of ${living.length} living players have voted.`, "muted small"),
     master && action("⚖️ Close the vote", () => {
       if (!everyone && !confirm("Not everyone has voted yet. Close the vote anyway?")) return;
       run(closeVoteNow)();
