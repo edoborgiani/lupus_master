@@ -1,9 +1,11 @@
-// Paste your Firebase web app config here (Firebase console > Project settings > Your apps).
+// Firebase web app config (Firebase console > Project settings > Your apps).
 // These values are not secret: access is controlled by database.rules.json.
 export const firebaseConfig = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_PROJECT.firebaseapp.com",
-  databaseURL: "https://YOUR_PROJECT-default-rtdb.europe-west1.firebasedatabase.app",
-  projectId: "YOUR_PROJECT",
-  appId: "YOUR_APP_ID",
+  apiKey: "AIzaSyBq02Vl78g6GjcBUKOfjLCfOgTHUNaEgE0",
+  authDomain: "lupusmaster.firebaseapp.com",
+  databaseURL: "https://lupusmaster-default-rtdb.europe-west1.firebasedatabase.app",
+  projectId: "lupusmaster",
+  storageBucket: "lupusmaster.firebasestorage.app",
+  messagingSenderId: "990848382452",
+  appId: "1:990848382452:web:719ee5899bb50fedbff5a1",
 };
