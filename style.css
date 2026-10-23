@@ -113,12 +113,12 @@ button.danger { color: #ff8a8a; }
 .list-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
 .count { color: var(--muted); font-size: .9rem; }
 
-#player-list { list-style: none; margin: 0; padding: 0; }
-#player-list li {
+.plain-list { list-style: none; margin: 0; padding: 0; }
+.plain-list li {
   display: flex; align-items: center; gap: 10px;
   padding: 10px 0; border-top: 1px solid var(--line);
 }
-#player-list li:first-child { border-top: none; }
+.plain-list li:first-child { border-top: none; }
 .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); flex: none; }
 .dot.off { background: var(--line); }
 .pname { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -136,3 +136,40 @@ button.danger { color: #ff8a8a; }
 .center { text-align: center; }
 code { background: var(--bg-2); padding: 1px 6px; border-radius: 6px; font-size: .9em; }
 #screen-setup h2 { margin-bottom: 8px; }
+
+/* game */
+.row-buttons { display: flex; gap: 8px; margin-top: 4px; }
+.row-buttons button { flex: 1; }
+#card-wait .muted { padding: 8px 0; }
+
+.role-row { gap: 12px !important; }
+.role-row .role-icon { font-size: 1.6rem; width: 2rem; text-align: center; flex: none; }
+.role-info { flex: 1; min-width: 0; }
+.role-info small { display: block; color: var(--muted); font-size: .8rem; }
+.stepper { display: flex; align-items: center; gap: 8px; flex: none; }
+.stepper button { width: 36px; height: 36px; padding: 0; border-radius: 50%; font-size: 1.2rem; line-height: 1; }
+.stepper output { min-width: 1.6em; text-align: center; font-weight: 700; font-size: 1.1rem; }
+#btn-assign { margin-top: 4px; }
+
+.role-reveal {
+  width: 100%; min-height: 240px; padding: 20px;
+  display: flex; align-items: center; justify-content: center; text-align: center;
+  background: var(--bg-2); border: 2px dashed var(--line); border-radius: var(--radius);
+}
+.role-hidden { font-size: 1.15rem; font-weight: 600; }
+.role-hidden small, .role-shown small { display: block; color: var(--muted); font-size: .8rem; font-weight: 400; margin-top: 6px; }
+.role-shown { display: none; flex-direction: column; align-items: center; gap: 8px; }
+.role-reveal[aria-expanded="true"] .role-hidden { display: none; }
+.role-reveal[aria-expanded="true"] .role-shown { display: flex; }
+.role-reveal[aria-expanded="true"] { border-style: solid; border-color: var(--accent-2); }
+.role-reveal.team-wolves[aria-expanded="true"] { border-color: var(--accent); }
+.role-shown .role-icon { font-size: 3.5rem; line-height: 1; }
+.role-shown strong { font-size: 1.6rem; font-family: Georgia, "Times New Roman", serif; }
+.role-shown > span:not(.role-icon) { color: var(--muted); font-size: .95rem; }
+.role-pack:empty { display: none; }
+.role-shown .role-pack { color: var(--text); font-weight: 600; }
+#game-counts { margin-top: 12px; }
+
+.badge.wolf { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 700; }
+.badge.special { color: var(--accent-2); border-color: var(--accent-2); }
+#btn-end-game { margin-top: 8px; }

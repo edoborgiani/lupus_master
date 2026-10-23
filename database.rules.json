@@ -9,7 +9,7 @@
           ".validate": "newData.isNumber()"
         },
         "masterId": {
-          ".write": "auth != null && (!data.exists() || data.val() === auth.uid)",
+          ".write": "auth != null && (!data.exists() || data.val() === auth.uid) && !root.child('lobbies').child($code).child('game').exists()",
           ".validate": "newData.val() === auth.uid"
         },
         "names": {
@@ -20,7 +20,7 @@
         },
         "players": {
           "$uid": {
-            ".write": "auth != null && auth.uid === $uid",
+            ".write": "auth != null && auth.uid === $uid && (data.exists() || !newData.exists() || !root.child('lobbies').child($code).child('game').exists())",
             ".validate": "newData.hasChildren(['name', 'joinedAt']) && root.child('lobbies').child($code).child('createdAt').exists()",
             "name": { ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 20" },
             "joinedAt": { ".validate": "newData.isNumber()" },
@@ -34,6 +34,31 @@
               ".validate": "newData.val() === true"
             }
           }
+        },
+        "game": {
+          ".write": "auth != null && root.child('lobbies').child($code).child('masterId').val() === auth.uid",
+          ".validate": "newData.hasChild('phase')",
+          "phase": { ".validate": "newData.val() === 'setup' || newData.val() === 'assigned'" },
+          "counts": { "$role": { ".validate": "newData.isNumber()" } },
+          "startedAt": { ".validate": "newData.isNumber()" },
+          "$other": { ".validate": false }
+        },
+        "$other": { ".validate": false }
+      }
+    },
+    "secrets": {
+      "$code": {
+        ".read": "auth != null && root.child('lobbies').child($code).child('masterId').val() === auth.uid",
+        ".write": "auth != null && root.child('lobbies').child($code).child('masterId').val() === auth.uid",
+        "roles": {
+          "$uid": {
+            ".read": "auth != null && auth.uid === $uid",
+            ".validate": "newData.isString() && newData.val().matches(/^(citizen|wolf|magician|medium)$/)"
+          }
+        },
+        "wolves": {
+          ".read": "auth != null && root.child('secrets').child($code).child('roles').child(auth.uid).val() === 'wolf'",
+          "$uid": { ".validate": "newData.val() === true" }
         },
         "$other": { ".validate": false }
       }
