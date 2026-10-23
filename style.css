@@ -173,3 +173,58 @@ code { background: var(--bg-2); padding: 1px 6px; border-radius: 6px; font-size:
 .badge.wolf { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 700; }
 .badge.special { color: var(--accent-2); border-color: var(--accent-2); }
 #btn-end-game { margin-top: 8px; }
+
+/* phases */
+#card-phase h2 { font-family: Georgia, "Times New Roman", serif; font-size: 1.3rem; margin-bottom: 6px; }
+#card-phase.night { background: linear-gradient(180deg, #1a1830, var(--card)); }
+#card-phase.day { background: linear-gradient(180deg, #3a3020, var(--card)); }
+.phase-text { color: var(--muted); margin: 0 0 14px; }
+.news { margin: 0 0 14px; padding: 12px 14px; border-radius: 10px; background: var(--bg-2); border-left: 3px solid var(--accent-2); }
+.news.death { border-left-color: var(--accent); }
+.status { list-style: none; margin: 0 0 14px; padding: 0; }
+.status li { padding: 8px 0; border-top: 1px solid var(--line); display: flex; gap: 10px; align-items: baseline; }
+.status li:first-child { border-top: none; }
+.status .who { flex: none; width: 1.6rem; text-align: center; }
+.status .ok { color: var(--ok); }
+.status .pending { color: var(--muted); }
+.preview { font-size: .9rem; color: var(--accent-2); margin: 0 0 12px; }
+
+.choices { list-style: none; margin: 0 0 14px; padding: 0; display: grid; gap: 8px; }
+.choice {
+  width: 100%; display: flex; align-items: center; gap: 10px; text-align: left;
+  padding: 12px 14px; background: var(--bg-2);
+}
+.choice .pname { flex: 1; }
+.choice.selected { border-color: var(--accent-2); box-shadow: 0 0 0 1px var(--accent-2) inset; }
+.choice.selected::after { content: "✓"; color: var(--accent-2); font-weight: 700; }
+.choice:disabled { opacity: 1; cursor: default; }
+.voters { display: block; color: var(--muted); font-size: .8rem; }
+.tally { min-width: 1.8em; text-align: center; font-weight: 700; color: var(--accent-2); }
+
+.plain-list li.dead .pname { text-decoration: line-through; color: var(--muted); }
+.winner { text-align: center; font-size: 1.4rem; font-family: Georgia, "Times New Roman", serif; margin: 4px 0 14px; }
+
+#card-log h2 { margin-bottom: 8px; }
+#game-log { margin: 0; padding-left: 1.3em; color: var(--muted); font-size: .92rem; }
+#game-log li { padding: 3px 0; }
+#game-log li strong { color: var(--text); font-weight: 600; }
+#game-log .secret { display: block; color: var(--accent-2); font-size: .82rem; }
+
+/* modes */
+.modes { display: grid; gap: 8px; margin: 0 0 14px; }
+.mode { display: flex; gap: 10px; align-items: flex-start; margin: 0; padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg-2); color: var(--text); cursor: pointer; }
+.mode input { margin-top: 4px; accent-color: var(--accent-2); }
+.mode small { display: block; color: var(--muted); font-size: .82rem; margin-top: 2px; }
+.mode:has(input:checked) { border-color: var(--accent-2); }
+.mode.disabled { opacity: .5; cursor: not-allowed; }
+
+/* live mode */
+.say { font-family: Georgia, "Times New Roman", serif; font-style: italic; font-size: 1.15rem; margin: 0 0 12px; color: var(--text); }
+.steps { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 14px; padding: 0; list-style: none; }
+.steps li { font-size: .75rem; padding: 3px 9px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
+.steps li.done { color: var(--ok); border-color: var(--ok); }
+.steps li.on { color: var(--bg); background: var(--accent-2); border-color: var(--accent-2); font-weight: 700; }
+.big-news { font-size: 1.35rem; font-weight: 700; text-align: center; margin: 6px 0 12px; }
+.secret-note { color: var(--accent-2); font-size: .9rem; margin: 0 0 14px; }
+.host-tools { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--line); }
+.host-tools p { margin: 0 0 8px; }

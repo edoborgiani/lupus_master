@@ -89,6 +89,16 @@
           <h2>Choose the roles</h2>
           <span class="count" id="setup-total"></span>
         </div>
+        <div class="modes" role="radiogroup" aria-label="Way of playing">
+          <label class="mode" id="mode-live">
+            <input type="radio" name="mode" value="live">
+            <span><strong>🗣️ Live</strong><small>Everyone at the same table. Phones only show the roles; the master records the night and the vote.</small></span>
+          </label>
+          <label class="mode" id="mode-remote">
+            <input type="radio" name="mode" value="remote">
+            <span><strong>📱 Remote</strong><small>Everyone plays on their own phone: night actions and votes happen in the app.</small></span>
+          </label>
+        </div>
         <p class="muted small" id="setup-suggestion"></p>
         <ul id="role-counters" class="plain-list"></ul>
         <p class="error" id="setup-error"></p>
@@ -98,6 +108,9 @@
           <button class="link danger" id="btn-cancel-setup">Cancel</button>
         </div>
       </div>
+
+      <!-- Current phase (night actions, day vote, results), built by app.js -->
+      <div class="card" id="card-phase" hidden></div>
 
       <!-- Player: own role, hidden until tapped -->
       <div class="card" id="card-role" hidden>
@@ -122,6 +135,12 @@
         </div>
         <ul id="master-role-list" class="plain-list"></ul>
         <button class="link danger" id="btn-end-game">End game</button>
+      </div>
+
+      <!-- Game history -->
+      <div class="card" id="card-log" hidden>
+        <h2>History</h2>
+        <ol id="game-log"></ol>
       </div>
 
       <div class="card" id="card-players">
