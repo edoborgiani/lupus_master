@@ -26,6 +26,7 @@ export const DEFAULT_RULES = {
   selfVote: false,          // players may vote for themselves
   reveal: "none",           // roles revealed when leaving the game: "none", "voted" (only by vote), "all"
   masonsWake: "first",      // live: the master calls the masons on the "first" night only, or "every" night
+  proleKnows: true,         // the prole knows their role (false: they believe they are a citizen until bitten)
   seerSeesProle: "village", // before the bite the seer sees the prole as "village" (not a wolf) or "wolf"
 };
 export const RULE_OPTIONS = {
@@ -116,11 +117,16 @@ export function nightStatus(roles, alive, wolfVotes = {}, actions = {}, { rules,
   return { wolves, wolvesDone, ...holders, seerSpent, complete };
 }
 
+/** The prole may be dealt openly (role "prole") or hidden as a citizen (listed in `cursed`, which only the controller sees). */
+export const trueRole = (roles, id, cursed = {}) => (roles[id] === "citizen" && cursed?.[id] ? "prole" : roles[id]);
+export const isProle = (roles, id, cursed = {}) => trueRole(roles, id, cursed) === "prole";
+
 /** What the seer learns about `target`. */
-export function seerVision(roles, target, rules) {
+export function seerVision(roles, target, rules, cursed = {}) {
   const r = withDefaults(rules);
-  const vision = { target, wolf: roles[target] === "wolf" || (roles[target] === "prole" && r.seerSeesProle === "wolf") };
-  if (r.seerSees === "role") vision.role = roles[target];
+  const role = trueRole(roles, target, cursed);
+  const vision = { target, wolf: role === "wolf" || (role === "prole" && r.seerSeesProle === "wolf") };
+  if (r.seerSees === "role") vision.role = role;
   return vision;
 }
 
@@ -130,7 +136,7 @@ export function seerVision(roles, target, rules) {
  * - If the wolves attack the house the medium is visiting, the medium dies instead.
  * - If the wolves attack the medium's own house while the medium is away, the rules decide.
  */
-export function resolveNight(roles, alive, wolfVotes = {}, actions = {}, { rules, round = 1, lastProtected = null } = {}) {
+export function resolveNight(roles, alive, wolfVotes = {}, actions = {}, { rules, round = 1, lastProtected = null, cursed = {} } = {}) {
   const r = withDefaults(rules);
   const target = wolvesAct(r, round) ? wolfTarget(roles, alive, wolfVotes).target : null;
   const [magician] = livingWithRole(roles, alive, "magician");
@@ -146,7 +152,7 @@ export function resolveNight(roles, alive, wolfVotes = {}, actions = {}, { rules
   else if (target && target === protectedId) reason = "protected";
   else if (target && target === visitedId) { victim = medium; reason = "medium"; }
   else if (target && target === medium && visitedId && !r.mediumAwayDies) reason = "medium-away";
-  else if (target && roles[target] === "prole") reason = "converted"; // the bite turns the prole into a wolf
+  else if (target && isProle(roles, target, cursed)) reason = "converted"; // the bite turns the prole into a wolf
   else if (target) { victim = target; reason = "killed"; }
   return { attacked: target, protected: protectedId, visited: visitedId, victim, reason, converted: reason === "converted" ? target : null };
 }
@@ -201,8 +207,14 @@ export function winner(roles, alive, rules) {
 
 // ---------- live mode ----------
 
-/** Steps the master walks through each night in live mode. Roles in the game are always called, even when dead. */
+/**
+ * Steps the master walks through each night in live mode. Roles in the game are always called, even when dead.
+ * With a prole, a last step before dawn tells them whether they were bitten: "prole" calls them, while
+ * "check" (prole who doesn't know their role) has everyone look at their phone, so nobody can tell who it was.
+ */
 export function nightSteps(counts = {}, round = 1, rules) {
-  const masons = counts.mason && (round === 1 || withDefaults(rules).masonsWake === "every");
-  return ["sleep", "wolves", ...(masons ? ["masons"] : []), ...NIGHT_ROLES.filter((r) => counts[r]), "dawn"];
+  const r = withDefaults(rules);
+  const masons = counts.mason && (round === 1 || r.masonsWake === "every");
+  const prole = counts.prole ? [r.proleKnows ? "prole" : "check"] : [];
+  return ["sleep", "wolves", ...(masons ? ["masons"] : []), ...NIGHT_ROLES.filter((x) => counts[x]), ...prole, "dawn"];
 }

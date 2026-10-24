@@ -28,6 +28,7 @@ const ROLE_DESC = {
       + (r.mediumAwayDies ? "Se attaccano casa tua mentre sei fuori, muori comunque." : "Se attaccano casa tua mentre sei fuori, ti salvi."),
     mason: () => "Sei un massone: conosci gli altri massoni e loro conoscono te. Siete abitanti del villaggio: aiutatevi a scoprire i lupi.",
     prole: (r) => "Sembri un semplice abitante del villaggio, ma se i lupi ti attaccano non muori: diventi uno di loro e da quel momento giochi con il branco."
+      + (r.proleKnows ? "" : " In questa partita la Prole non sa di esserlo: il suo telefono mostra Cittadino finché non viene morsa.")
       + (r.seerSeesProle === "wolf" ? " Il veggente ti vede già come un lupo." : ""),
     citizen: () => "Sei un semplice abitante del villaggio. Di giorno discuti e vota per scoprire ed eliminare i lupi.",
   },
@@ -41,6 +42,7 @@ const ROLE_DESC = {
       + (r.mediumAwayDies ? "If they attack your own house while you are away, you die anyway." : "If they attack your own house while you are away, you survive."),
     mason: () => "You are a mason: you know the other masons and they know you. You're on the village's side: help each other find the wolves.",
     prole: (r) => "You look like an ordinary villager, but if the wolves attack you, you don't die: you become one of them and from then on you play with the pack."
+      + (r.proleKnows ? "" : " In this game the Cursed doesn't know it: their phone shows Citizen until they are bitten.")
       + (r.seerSeesProle === "wolf" ? " The seer already sees you as a wolf." : ""),
     citizen: () => "You are an ordinary villager. During the day, discuss and vote to find and eliminate the wolves.",
   },
@@ -221,12 +223,21 @@ const STRINGS = {
     err_oneMason: "I massoni devono essere almeno 2.", zeroOrTwo: "0 oppure almeno 2",
     yourMasons: (n) => `I tuoi confratelli massoni: ${n}`,
     bitten: "Stanotte i lupi ti hanno morso: ora sei un lupo! Da adesso giochi con il branco.",
+    bittenHidden: "Eri la Prole senza saperlo: stanotte i lupi ti hanno morso e ora sei un lupo! Da adesso giochi con il branco.",
+    step_prole: "Prole", step_check: "Ruoli", sayProle: "Prole, apri gli occhi.",
+    proleBitten: (n) => `${n} è stato morso: fagli il pollice in su. Ora è un lupo (lo vede anche sul telefono) e dalla prossima notte si sveglia con il branco.`,
+    proleSafe: (n) => `${n} non è stato morso: fagli il pollice in giù.`,
+    proleGone: "La Prole è fuori gioco o è già un lupo. Chiamala comunque, aspetta qualche secondo e continua.",
+    sayCheck: "Tutti, senza farvi vedere, guardate di nuovo il vostro ruolo sul telefono: qualcuno potrebbe essere diventato un lupo.",
+    checkBitten: (n) => `${n} era la Prole ed è stato morso: ora sul suo telefono è un lupo e dalla prossima notte si sveglia con il branco.`,
+    checkNobody: "Stanotte nessuno è diventato un lupo.",
+    thenCheck: "Quando tutti hanno guardato e rimesso giù il telefono, continua.",
+    rule_proleKnows: "La Prole sa di essere la Prole", rule_proleKnows_desc: "Se disattivato, il suo telefono mostra Cittadino finché non viene morsa.",
     step_masons: "Massoni", sayMasons: "Massoni, aprite gli occhi e riconoscetevi.",
     masonsAre: (n) => `I massoni sono ${n}. Lasciali guardarsi, poi continua.`,
     masonsOut: "I massoni sono tutti fuori gioco. Chiamali comunque, aspetta qualche secondo e continua.",
     thenMasons: "Poi: “Massoni, chiudete gli occhi.”",
     res_converted: (a) => `i lupi attaccano ${a}, che è la Prole: non muore, ma diventa un lupo!`,
-    convertedNote: (n) => `Fai sapere a ${n} in segreto che ora è un lupo (lo vede anche sul telefono): dalla prossima notte si sveglia con il branco.`,
     exProle: " (ex Prole)",
     rule_masonsWake: "Dal vivo, i massoni vengono chiamati…", opt_masonsWake_first: "solo la prima notte", opt_masonsWake_every: "ogni notte",
     rule_seerSeesProle: "Prima del morso, il veggente vede la Prole come…", opt_seerSeesProle_village: "non lupo", opt_seerSeesProle_wolf: "lupo",
@@ -374,12 +385,21 @@ const STRINGS = {
     err_oneMason: "There must be at least 2 masons.", zeroOrTwo: "0 or at least 2",
     yourMasons: (n) => `Your fellow masons: ${n}`,
     bitten: "Tonight the wolves bit you: you are now a wolf! From now on you play with the pack.",
+    bittenHidden: "You were the Cursed without knowing it: tonight the wolves bit you and now you are a wolf! From now on you play with the pack.",
+    step_prole: "Cursed", step_check: "Roles", sayProle: "Cursed, open your eyes.",
+    proleBitten: (n) => `${n} was bitten: give them a thumbs up. They are now a wolf (their phone shows it too) and from the next night they wake up with the pack.`,
+    proleSafe: (n) => `${n} was not bitten: give them a thumbs down.`,
+    proleGone: "The Cursed is out of the game or already a wolf. Call them anyway, wait a few seconds, then continue.",
+    sayCheck: "Everyone, without being seen, look at your role on your phone again: someone may have become a wolf.",
+    checkBitten: (n) => `${n} was the Cursed and was bitten: their phone now shows a wolf, and from the next night they wake up with the pack.`,
+    checkNobody: "Nobody became a wolf tonight.",
+    thenCheck: "When everyone has looked and put their phone down, continue.",
+    rule_proleKnows: "The Cursed knows they are the Cursed", rule_proleKnows_desc: "If off, their phone shows Citizen until they are bitten.",
     step_masons: "Masons", sayMasons: "Masons, open your eyes and recognise each other.",
     masonsAre: (n) => `The masons are ${n}. Let them look at each other, then continue.`,
     masonsOut: "The masons are all out. Call them anyway, wait a few seconds, then continue.",
     thenMasons: "Then: “Masons, close your eyes.”",
     res_converted: (a) => `the wolves attack ${a}, who is the Cursed: they don't die, they become a wolf!`,
-    convertedNote: (n) => `Let ${n} know in secret that they are now a wolf (their phone shows it too): from the next night they wake up with the pack.`,
     exProle: " (formerly Cursed)",
     rule_masonsWake: "In live games, the masons are called…", opt_masonsWake_first: "only on the first night", opt_masonsWake_every: "every night",
     rule_seerSeesProle: "Before the bite, the seer sees the Cursed as…", opt_seerSeesProle_village: "not a wolf", opt_seerSeesProle_wolf: "a wolf",
@@ -441,7 +461,9 @@ const GUIDE = {
         <li>${r.mediumAwayDies
           ? "Se i lupi attaccano la casa del medium mentre è fuori in visita, <strong>il medium muore comunque</strong>."
           : "Se i lupi attaccano la casa del medium mentre è fuori in visita, <strong>il medium si salva</strong>: non è in casa."}</li>
-        <li>Se i lupi attaccano <strong>la Prole</strong>, non muore: <strong>diventa un lupo</strong> e da quel momento gioca con il branco.</li>
+        <li>Se i lupi attaccano <strong>la Prole</strong>, non muore: <strong>diventa un lupo</strong> e da quel momento gioca con il branco.${r.proleKnows
+          ? " Dal vivo, prima dell'alba il master chiama la Prole e le fa il pollice in su se è stata morsa."
+          : " La Prole non sa di esserlo: dal vivo, prima dell'alba tutti riguardano il proprio ruolo sul telefono."}</li>
         <li>Altrimenti muore la vittima dei lupi.</li>
       </ul>
       <p>Il master annuncia solo chi è morto, non il perché.${r.reveal === "all" ? " Il ruolo della vittima viene rivelato a tutti." : ""}</p>
@@ -516,7 +538,9 @@ const GUIDE = {
         <li>${r.mediumAwayDies
           ? "If the wolves attack the medium's house while they are out visiting, <strong>the medium dies anyway</strong>."
           : "If the wolves attack the medium's house while they are out visiting, <strong>the medium survives</strong>: they aren't home."}</li>
-        <li>If the wolves attack <strong>the Cursed</strong>, they don't die: <strong>they become a wolf</strong> and from then on play with the pack.</li>
+        <li>If the wolves attack <strong>the Cursed</strong>, they don't die: <strong>they become a wolf</strong> and from then on play with the pack.${r.proleKnows
+          ? " In live games, before dawn the master calls the Cursed and gives them a thumbs up if they were bitten."
+          : " The Cursed doesn't know it: in live games, before dawn everyone looks at their role on their phone again."}</li>
         <li>Otherwise the wolves' victim dies.</li>
       </ul>
       <p>The master only announces who died, not why.${r.reveal === "all" ? " The victim's role is revealed to everyone." : ""}</p>
