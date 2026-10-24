@@ -844,7 +844,7 @@ function renderOver() {
     (ROLE_ORDER.indexOf(reveal[a]) - ROLE_ORDER.indexOf(reveal[b])) || playerName(a).localeCompare(playerName(b)));
   const back = action(t("backToRoom"), run(endGame));
   phaseCard("", t("gameOver"),
-    el("p", { class: "winner" }, roleIcon(g.winner === "wolves" ? "wolf" : "citizen"), g.winner === "wolves" ? t("wolvesWin") : t("villageWins")),
+    el("p", { class: "winner" }, uiIcon(g.winner === "wolves" ? "wolves-win" : "village"), g.winner === "wolves" ? t("wolvesWin") : t("villageWins")),
     el("ul", { class: "plain-list" }, ids.map((id) => {
       const li = playerRow(id, playerName(id));
       li.append(roleBadge(reveal[id]));
