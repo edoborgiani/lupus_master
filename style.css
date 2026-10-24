@@ -295,3 +295,22 @@ html[lang="it"] [data-lang="en"], html[lang="en"] [data-lang="it"] { display: no
 .rule-tile .rule:first-of-type { border-top: none; }
 .rule-tile select { background: var(--card); }
 .guide-note { margin: 14px 0 0 !important; padding: 10px 12px; border-radius: 10px; background: var(--bg-2); color: var(--text) !important; font-size: .9rem; }
+
+/* pixel-art role icons */
+.ri, .ri-big { image-rendering: pixelated; image-rendering: crisp-edges; flex: none; }
+.ri { width: 1.35em; height: 1.35em; vertical-align: -0.3em; }
+.ri-big { width: 96px; height: 96px; }
+.badge { display: inline-flex; align-items: center; gap: 4px; }
+.badge .ri { width: 1.4em; height: 1.4em; margin: -2px 0; }
+.role-row .role-icon .ri { width: 32px; height: 32px; vertical-align: middle; }
+.role-title .ri { width: 28px; height: 28px; }
+.role-title .team-tag .ri { width: 1.3em; height: 1.3em; }
+.with-icon { display: flex; gap: 10px; align-items: center; }
+.with-icon .ri { width: 32px; height: 32px; }
+.steps li { display: inline-flex; align-items: center; gap: 4px; }
+.steps li .ri { width: 1.3em; height: 1.3em; }
+.status .who .ri { width: 22px; height: 22px; vertical-align: middle; }
+.voters .ri { width: 1.2em; height: 1.2em; margin-right: 3px; }
+.winner { display: flex; align-items: center; justify-content: center; gap: 10px; }
+.winner .ri { width: 40px; height: 40px; }
+.sheet-body strong .ri { width: 1.4em; height: 1.4em; }

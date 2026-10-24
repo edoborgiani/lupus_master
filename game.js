@@ -1,13 +1,13 @@
 // Lupus in Tabula - game rules (pure functions, no Firebase, DOM or text, so they can be tested alone)
 
 export const ROLES = {
-  wolf: { icon: "🐺", team: "wolves", min: 1 },
-  seer: { icon: "👁️", team: "village", max: 1 },
-  magician: { icon: "🪄", team: "village", max: 1 },
-  medium: { icon: "🔮", team: "village", max: 1 },
-  mason: { icon: "🤝", team: "village", group: 2 },  // none, or at least two: they know each other
-  prole: { icon: "🌗", team: "village", max: 1 },    // becomes a wolf if the wolves kill them
-  citizen: { icon: "🧑‍🌾", team: "village" },
+  wolf: { team: "wolves", min: 1 },
+  seer: { team: "village", max: 1 },
+  magician: { team: "village", max: 1 },
+  medium: { team: "village", max: 1 },
+  mason: { team: "village", group: 2 },  // none, or at least two: they know each other
+  prole: { team: "village", max: 1 },    // becomes a wolf if the wolves kill them
+  citizen: { team: "village" },
 };
 export const SPECIAL_ROLES = ["wolf", "seer", "magician", "medium", "mason", "prole"]; // citizens fill the remaining slots
 export const ROLE_ORDER = [...SPECIAL_ROLES, "citizen"];
