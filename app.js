@@ -30,7 +30,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, onAuthStateChanged, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import {
-  getDatabase, ref, get, set, update, remove, push, onValue, onDisconnect, runTransaction,
+  getDatabase, ref, get, set, update, remove, push, onValue, onDisconnect, runTransaction, goOnline, goOffline,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
 import { firebaseConfig } from "./firebase-config.js";
 import {
@@ -146,7 +146,8 @@ function show(name) {
 }
 
 function goHome(error = "") {
-  closeLobby();
+  // stay connected only while in a room: the free plan counts simultaneous connections
+  closeLobby().finally(() => { if (!code) goOffline(db); });
   store("lupus.lobby", null);
   history.replaceState(null, "", location.pathname);
   $("#home-error").textContent = error;
@@ -1045,7 +1046,7 @@ function dropPresence() {
 function closeLobby() {
   if (unsubLobby) unsubLobby();
   unsubLobby = null;
-  dropPresence();
+  const left = dropPresence();
   code = null;
   lobby = null;
   joined = false;
@@ -1053,6 +1054,7 @@ function closeLobby() {
   setup = null;
   syncSecrets();
   renderConnection();
+  return left;
 }
 
 // ---------- actions: lobby ----------
@@ -1066,6 +1068,7 @@ function randomCode() {
 }
 
 async function createLobby() {
+  goOnline(db);
   for (let attempt = 0; attempt < 10; attempt++) {
     const candidate = randomCode();
     const tx = await runTransaction(ref(db, `lobbies/${candidate}/createdAt`),
@@ -1085,6 +1088,7 @@ async function joinCode(input) {
     $("#home-error").textContent = t("codeLetters");
     return;
   }
+  goOnline(db);
   const snap = await get(ref(db, `lobbies/${c}/createdAt`));
   if (!snap.exists()) {
     goHome(t("noRoomCode", c));
@@ -1397,6 +1401,7 @@ async function main() {
   const app = initializeApp(firebaseConfig);
   const auth = getAuth(app);
   db = getDatabase(app);
+  goOffline(db); // connect only when creating or joining a room
 
   // anonymous auth gives each browser a stable id, so a refresh puts you back in your seat
   const existing = await new Promise((resolve) => {

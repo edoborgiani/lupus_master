@@ -284,3 +284,4 @@ html[lang="it"] [data-lang="en"], html[lang="en"] [data-lang="it"] { display: no
 .vision { font-size: 1.15rem; font-weight: 700; text-align: center; margin: 4px 0 12px; padding: 12px; border-radius: 10px; background: var(--bg-2); }
 .vision.wolf { color: #fff; background: var(--accent); }
 .visions { margin: 6px 0 0; font-size: .85rem; color: var(--text); }
+.lang span { white-space: nowrap; }
