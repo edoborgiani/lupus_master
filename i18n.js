@@ -21,7 +21,7 @@ const ROLE_DESC = {
   it: {
     wolf: (r) => `Ogni notte i lupi scelgono insieme un giocatore da uccidere${r.firstNightKill ? "" : " (la prima notte vi riconoscete soltanto)"}. `
       + `Vincete quando i lupi sono ${r.wolvesWin === "majority" ? "più" : "tanti quanti"} degli altri.`,
-    seer: (r) => `Ogni notte indichi un giocatore e scopri ${r.seerSees === "role" ? "il suo ruolo esatto" : "se è un lupo oppure no"}.`,
+    seer: (r) => `${r.seerUses === "once" ? "Una sola volta per partita, nella notte che scegli tu," : "Ogni notte"} indichi un giocatore e scopri ${r.seerSees === "role" ? "il suo ruolo esatto" : "se è un lupo oppure no"}.`,
     magician: (r) => `Ogni notte proteggi la casa di un giocatore${r.magicianSelf ? " (anche la tua)" : " (non la tua)"}: nessuno al suo interno può essere ucciso quella notte.`
       + (r.magicianRepeat ? "" : " Non puoi proteggere la stessa casa due notti di fila."),
     medium: (r) => "Ogni notte vai a casa di un altro giocatore. Se i lupi attaccano quella casa, muori tu al suo posto. "
@@ -31,7 +31,7 @@ const ROLE_DESC = {
   en: {
     wolf: (r) => `Each night the wolves agree on a player to kill${r.firstNightKill ? "" : " (on the first night you only recognise each other)"}. `
       + `You win when the wolves are ${r.wolvesWin === "majority" ? "more than" : "as many as"} the others.`,
-    seer: (r) => `Each night you point at a player and learn ${r.seerSees === "role" ? "their exact role" : "whether they are a wolf"}.`,
+    seer: (r) => `${r.seerUses === "once" ? "Once per game, on the night you choose," : "Each night"} you point at a player and learn ${r.seerSees === "role" ? "their exact role" : "whether they are a wolf"}.`,
     magician: (r) => `Each night you protect a player's house${r.magicianSelf ? " (yours too)" : " (not your own)"}: nobody in it can be killed that night.`
       + (r.magicianRepeat ? "" : " You can't protect the same house two nights in a row."),
     medium: (r) => "Each night you visit another player's house. If the wolves attack it, you die in their place. "
@@ -44,14 +44,14 @@ const ROLE_DESC = {
 const ROLE_INFO = {
   it: {
     wolf: "Di notte i lupi si riconoscono e si accordano su una vittima: devono essere tutti d'accordo. Di giorno fingono di essere innocenti.",
-    seer: "Una sola visione per notte, e non si può cambiare. Usa ciò che scopri per guidare il villaggio, ma se i lupi capiscono chi sei, sarai il loro prossimo bersaglio.",
+    seer: "Una volta scelto il giocatore, la visione non si può cambiare. Usa ciò che scopri per guidare il villaggio, ma se i lupi capiscono chi sei, sarai il loro prossimo bersaglio.",
     magician: "La protezione vale per tutta la casa: se il medium è in visita lì, è salvo anche lui.",
     medium: "Non puoi visitare te stesso. Se il mago protegge la casa che visiti, vi salvate entrambi.",
     citizen: "Non hai poteri notturni, ma il tuo voto conta: osserva, ascolta e smaschera i lupi.",
   },
   en: {
     wolf: "At night the wolves recognise each other and agree on a victim: they must all agree. During the day they pretend to be innocent.",
-    seer: "One vision per night, and it can't be changed. Use what you learn to guide the village, but if the wolves figure out who you are, you'll be next.",
+    seer: "Once you pick a player, the vision can't be changed. Use what you learn to guide the village, but if the wolves figure out who you are, you'll be next.",
     magician: "The protection covers the whole house: if the medium is visiting, they are safe too.",
     medium: "You can't visit yourself. If the magician protects the house you visit, you are both safe.",
     citizen: "You have no night powers, but your vote counts: watch, listen and unmask the wolves.",
@@ -201,6 +201,15 @@ const STRINGS = {
     rule_selfVote: "Si può votare se stessi", rule_selfVote_desc: "",
     rule_reveal: "Quando qualcuno esce di scena, il suo ruolo…", opt_reveal_none: "resta segreto fino alla fine",
     opt_reveal_voted: "si rivela solo se eliminato al voto", opt_reveal_all: "si rivela sempre",
+    rule_seerUses: "Il veggente usa il suo potere…", opt_seerUses_every: "ogni notte", opt_seerUses_once: "una sola volta per partita",
+    seerSkip: "Non stanotte", seerSkipped: "Stanotte non usi il tuo potere. Chiudi gli occhi fino al mattino.",
+    seerSpent: "Hai già usato il tuo potere in questa partita. Chiudi gli occhi fino al mattino.",
+    seerPromptOnce: "Puoi usare il tuo potere una sola volta per partita. Scegli un giocatore adesso, oppure tienilo per un'altra notte.",
+    seerSkipsLine: (n) => `${n} non usa il potere stanotte`, seerSpentLine: (n) => `${n} ha già usato il suo potere`,
+    seerSpentLive: (icon, n) => `${icon} ${n} ha già usato il suo potere. Chiamalo comunque, così nessuno se ne accorge, poi continua.`,
+    seerSkipLive: "Non lo usa stanotte",
+    guideRoom: "📌 Queste sono le regole scelte per questa stanza.",
+    guideDefault: "📌 Queste sono le regole predefinite: chi guida la partita può cambiarle nelle ⚙️ impostazioni.",
   },
   en: {
     info: "📖 Rules", settings: "Settings", subtitle: "Game companion", connecting: "Connecting…",
@@ -333,6 +342,15 @@ const STRINGS = {
     rule_selfVote: "Players can vote for themselves", rule_selfVote_desc: "",
     rule_reveal: "When someone leaves the game, their role…", opt_reveal_none: "stays secret until the end",
     opt_reveal_voted: "is revealed only if voted out", opt_reveal_all: "is always revealed",
+    rule_seerUses: "The seer uses their power…", opt_seerUses_every: "every night", opt_seerUses_once: "once per game",
+    seerSkip: "Not tonight", seerSkipped: "You don't use your power tonight. Close your eyes until morning.",
+    seerSpent: "You have already used your power in this game. Close your eyes until morning.",
+    seerPromptOnce: "You can use your power only once per game. Choose a player now, or keep it for another night.",
+    seerSkipsLine: (n) => `${n} doesn't use the power tonight`, seerSpentLine: (n) => `${n} has already used their power`,
+    seerSpentLive: (icon, n) => `${icon} ${n} has already used their power. Call them anyway, so nobody notices, then continue.`,
+    seerSkipLive: "Not using it tonight",
+    guideRoom: "📌 These are the rules chosen for this room.",
+    guideDefault: "📌 These are the default rules: whoever runs the game can change them in the ⚙️ settings.",
   },
 };
 
@@ -349,6 +367,158 @@ export function t(key, ...args) {
   const v = STRINGS[lang][key] ?? STRINGS.it[key] ?? key;
   return typeof v === "function" ? v(...args) : v;
 }
+
+/** The rules guide, written out for the rules in force. Static text only (no player input), so it's safe as HTML. */
+const GUIDE = {
+  it: (r) => `
+    <section>
+      <h3>Lo scopo</h3>
+      <p>Nel villaggio si nascondono dei <strong>lupi</strong>. Ogni notte uccidono qualcuno; ogni giorno il villaggio
+        discute e vota per eliminare chi sospetta essere un lupo. Nessuno conosce il ruolo degli altri: bisogna osservare,
+        ragionare e convincere.</p>
+      <ul>
+        <li><strong>🏡 Il villaggio</strong> (Cittadini, Veggente, Mago, Medium) vince quando <strong>tutti i lupi sono stati eliminati</strong>.</li>
+        <li><strong>🐺 I lupi</strong> vincono quando ${r.wolvesWin === "majority"
+          ? "<strong>sono più degli altri giocatori</strong> (ad esempio 2 lupi contro 1 abitante)"
+          : "<strong>sono tanti quanti gli altri giocatori</strong> (ad esempio 2 lupi contro 2 abitanti)"}.</li>
+      </ul>
+    </section>
+    <section><h3>I ruoli</h3><ul class="info-roles"></ul></section>
+    <section>
+      <h3>🌙 La notte</h3>
+      <p>Tutti chiudono gli occhi. Il master chiama i ruoli uno alla volta, in quest'ordine:</p>
+      <ol>
+        <li><strong>I lupi</strong> aprono gli occhi, si riconoscono e indicano insieme la vittima: devono essere tutti d'accordo.${r.firstNightKill ? ""
+          : " <strong>La prima notte si riconoscono soltanto</strong>, senza uccidere."}</li>
+        <li><strong>Il veggente</strong> indica un giocatore e scopre ${r.seerSees === "role" ? "<strong>il suo ruolo esatto</strong>" : "<strong>se è un lupo</strong> oppure no"}.${r.seerUses === "once"
+          ? " Può farlo <strong>una sola volta per partita</strong>, nella notte che preferisce; le altre notti viene chiamato lo stesso." : ""}</li>
+        <li><strong>Il mago</strong> indica la casa da proteggere (${r.magicianSelf ? "anche la propria" : "non la propria"}).${r.magicianRepeat
+          ? " Può proteggere la stessa casa più notti di fila." : " <strong>Non può proteggere la stessa casa due notti di fila.</strong>"}</li>
+        <li><strong>Il medium</strong> indica la casa di un altro giocatore in cui andare.</li>
+      </ol>
+      <p>Il master chiama ogni ruolo anche se chi lo aveva è fuori gioco, così nessuno capisce chi è rimasto.</p>
+    </section>
+    <section>
+      <h3>🌅 L'alba</h3>
+      <ul>
+        <li>Se il mago protegge la casa attaccata, <strong>nessuno muore</strong> (nemmeno il medium, se è lì).</li>
+        <li>Altrimenti, se il medium è in visita nella casa attaccata, <strong>muore il medium</strong> al posto del padrone di casa.</li>
+        <li>${r.mediumAwayDies
+          ? "Se i lupi attaccano la casa del medium mentre è fuori in visita, <strong>il medium muore comunque</strong>."
+          : "Se i lupi attaccano la casa del medium mentre è fuori in visita, <strong>il medium si salva</strong>: non è in casa."}</li>
+        <li>Altrimenti muore la vittima dei lupi.</li>
+      </ul>
+      <p>Il master annuncia solo chi è morto, non il perché.${r.reveal === "all" ? " Il ruolo della vittima viene rivelato a tutti." : ""}</p>
+    </section>
+    <section>
+      <h3>☀️ Il giorno</h3>
+      <p>Il villaggio discute liberamente, poi ognuno vota chi vuole eliminare (${r.selfVote ? "si può votare anche se stessi" : "non si può votare se stessi"}).</p>
+      <ul>
+        <li>Chi riceve <strong>più voti</strong> viene eliminato.</li>
+        <li>In caso di <strong>pareggio</strong> si fa un <strong>ballottaggio</strong> solo tra i giocatori a pari voti.</li>
+        <li>Se anche il ballottaggio finisce in pareggio, ${r.secondTie === "random"
+          ? "<strong>si estrae a sorte</strong> uno dei giocatori a pari voti." : "quel giorno <strong>nessuno viene eliminato</strong>."}</li>
+      </ul>
+      <p>Chi è fuori gioco non parla e non vota. ${{
+        none: "I ruoli si scoprono solo a fine partita.",
+        voted: "Il ruolo di chi viene eliminato al voto viene rivelato; quello delle vittime della notte resta segreto fino alla fine.",
+        all: "Il ruolo di chi esce di scena viene sempre rivelato.",
+      }[r.reveal]}</p>
+    </section>
+    <section>
+      <h3>📱 Le due modalità</h3>
+      <ul>
+        <li><strong>🗣️ Dal vivo</strong>: tutti allo stesso tavolo, serve un master. Ognuno guarda il proprio ruolo sul telefono
+          e lo mette via; il master guida la notte dal suo telefono, registra le scelte indicate col dito, vede chi muore
+          all'alba e registra il risultato della votazione.</li>
+        <li><strong>📱 A distanza</strong>: ognuno sceglie e vota dal proprio telefono. Il master è facoltativo: senza master,
+          chi ha creato la stanza (l'host) gioca come gli altri e la partita va avanti da sola.</li>
+      </ul>
+    </section>
+    <section>
+      <h3>💡 Consigli</h3>
+      <ul>
+        <li>Non mostrare mai il tuo telefono agli altri.</li>
+        <li>Di notte, a occhi chiusi, nessun rumore e nessun movimento.</li>
+        <li>Servono almeno 5 giocatori, master escluso.</li>
+      </ul>
+    </section>`,
+  en: (r) => `
+    <section>
+      <h3>The goal</h3>
+      <p>Some <strong>wolves</strong> are hiding in the village. Each night they kill someone; each day the village discusses
+        and votes to eliminate whoever they suspect is a wolf. Nobody knows the others' roles: you have to watch, reason
+        and persuade.</p>
+      <ul>
+        <li><strong>🏡 The village</strong> (Citizens, Seer, Magician, Medium) wins when <strong>all the wolves have been eliminated</strong>.</li>
+        <li><strong>🐺 The wolves</strong> win when ${r.wolvesWin === "majority"
+          ? "<strong>they outnumber the other players</strong> (for example 2 wolves against 1 villager)"
+          : "<strong>they are as many as the other players</strong> (for example 2 wolves against 2 villagers)"}.</li>
+      </ul>
+    </section>
+    <section><h3>The roles</h3><ul class="info-roles"></ul></section>
+    <section>
+      <h3>🌙 The night</h3>
+      <p>Everyone closes their eyes. The master calls the roles one at a time, in this order:</p>
+      <ol>
+        <li><strong>The wolves</strong> open their eyes, recognise each other and point at their victim together: they must all agree.${r.firstNightKill ? ""
+          : " <strong>On the first night they only recognise each other</strong>, without killing."}</li>
+        <li><strong>The seer</strong> points at a player and learns ${r.seerSees === "role" ? "<strong>their exact role</strong>" : "<strong>whether they are a wolf</strong>"}.${r.seerUses === "once"
+          ? " They can do it <strong>only once per game</strong>, on the night they prefer; on the other nights they are called anyway." : ""}</li>
+        <li><strong>The magician</strong> points at the house to protect (${r.magicianSelf ? "their own too" : "not their own"}).${r.magicianRepeat
+          ? " They can protect the same house several nights in a row." : " <strong>They can't protect the same house two nights in a row.</strong>"}</li>
+        <li><strong>The medium</strong> points at another player's house to visit.</li>
+      </ol>
+      <p>The master calls every role even if its player is out, so nobody can tell who is left.</p>
+    </section>
+    <section>
+      <h3>🌅 Dawn</h3>
+      <ul>
+        <li>If the magician protects the attacked house, <strong>nobody dies</strong> (not even the medium, if visiting).</li>
+        <li>Otherwise, if the medium is visiting the attacked house, <strong>the medium dies</strong> in place of its owner.</li>
+        <li>${r.mediumAwayDies
+          ? "If the wolves attack the medium's house while they are out visiting, <strong>the medium dies anyway</strong>."
+          : "If the wolves attack the medium's house while they are out visiting, <strong>the medium survives</strong>: they aren't home."}</li>
+        <li>Otherwise the wolves' victim dies.</li>
+      </ul>
+      <p>The master only announces who died, not why.${r.reveal === "all" ? " The victim's role is revealed to everyone." : ""}</p>
+    </section>
+    <section>
+      <h3>☀️ The day</h3>
+      <p>The village discusses freely, then everyone votes who to eliminate (${r.selfVote ? "voting for yourself is allowed" : "you can't vote for yourself"}).</p>
+      <ul>
+        <li>Whoever gets <strong>the most votes</strong> is eliminated.</li>
+        <li>On a <strong>tie</strong> there is a <strong>run-off</strong> only between the tied players.</li>
+        <li>If the run-off is tied too, ${r.secondTie === "random"
+          ? "<strong>one of the tied players is drawn at random</strong>." : "<strong>nobody is eliminated</strong> that day."}</li>
+      </ul>
+      <p>Players who are out don't talk and don't vote. ${{
+        none: "Roles are only revealed at the end of the game.",
+        voted: "The role of whoever is voted out is revealed; the night's victims stay secret until the end.",
+        all: "The role of whoever leaves the game is always revealed.",
+      }[r.reveal]}</p>
+    </section>
+    <section>
+      <h3>📱 Two ways of playing</h3>
+      <ul>
+        <li><strong>🗣️ Live</strong>: everyone at the same table, a master is needed. Everyone checks their role on their phone
+          and puts it away; the master runs the night from their phone, records the choices people point at, sees who dies
+          at dawn and records the result of the vote.</li>
+        <li><strong>📱 Remote</strong>: everyone chooses and votes on their own phone. The master is optional: without one,
+          the room's creator (the host) plays like everyone else and the game moves on by itself.</li>
+      </ul>
+    </section>
+    <section>
+      <h3>💡 Tips</h3>
+      <ul>
+        <li>Never show your phone to the others.</li>
+        <li>At night, eyes closed: no noise and no movement.</li>
+        <li>You need at least 5 players, not counting the master.</li>
+      </ul>
+    </section>`,
+};
+
+export const guideHtml = (rules) => GUIDE[lang](withDefaults(rules));
 
 export const roleName = (role, count = 1) => ROLE_NAMES[lang][role][count === 1 ? 0 : 1];
 export const roleDesc = (role, rules) => ROLE_DESC[lang][role](withDefaults(rules));

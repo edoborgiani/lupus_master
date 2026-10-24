@@ -36,9 +36,9 @@ import { firebaseConfig } from "./firebase-config.js";
 import {
   ROLES, ROLE_ORDER, NIGHT_ROLES, DEFAULT_RULES, RULE_OPTIONS, withDefaults, suggestedCounts, maxWolves, setupError,
   dealRoles, aliveIds, livingWithRole, wolfTarget, wolvesAct, protectable, nightStatus, seerVision, resolveNight,
-  tallyVotes, closeVote, revealsRole, winner, nightSteps,
+  tallyVotes, closeVote, revealsRole, winner, nightSteps, SKIP, seerCanLook, seerUsedBefore,
 } from "./game.js";
-import { LANGS, t, getLang, setLang, roleName, roleDesc, roleInfo, translatePage } from "./i18n.js";
+import { LANGS, t, getLang, setLang, roleName, roleDesc, roleInfo, guideHtml, translatePage } from "./i18n.js";
 
 const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ"; // no I/O, avoids confusion with 1/0
 const MAX_PLAYERS = 30;
@@ -48,7 +48,7 @@ const AUTO_NIGHT_DELAY = 3000; // masterless remote: pause before resolving a co
 const AUTO_VOTE_DELAY = 5000;  // ... and before closing a vote everyone has cast, so votes can still change
 const RULE_GROUPS = [
   ["wolf", ["firstNightKill", "wolvesWin"]],
-  ["seer", ["seerSees"]],
+  ["seer", ["seerSees", "seerUses"]],
   ["magician", ["magicianSelf", "magicianRepeat"]],
   ["medium", ["mediumAwayDies"]],
   ["vote", ["secondTie", "selfVote", "reveal"]],
@@ -131,6 +131,9 @@ const roomMode = () => {
   const m = lobby?.settings?.mode || (lobby?.masterId ? "live" : "remote");
   return m === "live" && !lobby?.masterId ? "remote" : m;
 };
+/** Whether the seer already had a vision before tonight (for the "once per game" rule), from what this phone knows. */
+const seerUsed = (seerId, round) => seerUsedBefore(seerId === uid ? visions : secrets?.visions?.[seerId], round);
+const seerSpent = (seerId, round) => !seerCanLook(rules(), seerUsed(seerId, round));
 const runnerName = () => (lobby.masterId ? t("theMaster") : t("hostOf", playerName(lobby.hostId)));
 const roleLabel = (r) => `${ROLES[r].icon} ${roleName(r)}`;
 const visionText = (v) => (v.role ? t("isRole", playerName(v.target), roleLabel(v.role))
@@ -218,7 +221,7 @@ function playerRow(id, name) {
     : el("span", { class: "dot" + (isOnline(id) ? "" : " off"), title: isOnline(id) ? t("online") : t("offline") });
   const li = el("li", { class: isDead(id) ? "dead" : "" }, dot, el("span", { class: "pname" }, name));
   if (id === uid) li.append(badge(t("you"), "you"));
-  if (isDead(id)) li.append(badge(t("out"), ""));
+  if (isDead(id)) li.append(el("span", { class: "skull", title: t("out"), "aria-label": t("out") }, "💀"));
   return li;
 }
 
@@ -527,12 +530,19 @@ function liveNight() {
       return phaseCard("night", title, progress, say(t(`say_${step}`)),
         text(t("roleIsOut", role.icon, name)), action(t("continue"), run(() => go())), back);
     }
+    if (step === "seer" && seerSpent(holder, g.round)) {
+      return phaseCard("night", title, progress, say(t(`say_${step}`)),
+        text(t("seerSpentLive", role.icon, playerName(holder))), action(t("continue"), run(() => go())), back);
+    }
     const options = step === "magician"
       ? protectable(roles, alive(), rules(), lastProtected(g.round))
       : living.filter((id) => id !== holder);
     const updates = () => {
       const u = { [`secrets/${code}/actions/${holder}`]: liveSel };
-      if (step === "seer") u[`secrets/${code}/visions/${holder}/${g.round}`] = seerVision(roles, liveSel, rules());
+      if (step === "seer") {
+        u[`secrets/${code}/visions/${holder}/${g.round}`] = seerVision(roles, liveSel, rules());
+        u[`secrets/${code}/memo/${holder}/used`] = true;
+      }
       return u;
     };
     let answer = null;
@@ -550,6 +560,7 @@ function liveNight() {
       action(liveSel ? t("confirmAction", t(`verb_${step}`), playerName(liveSel)) : t("choosePlayer"),
         run(() => go(updates())), { disabled: !liveSel }),
       text(t("thenClose", roleName(step)), "muted small"),
+      step === "seer" && rules().seerUses === "once" && action(t("seerSkipLive"), run(() => go()), { cls: "link" }),
       back);
   }
 
@@ -625,7 +636,8 @@ function masterNight() {
   const roles = secrets.roles || {};
   const wv = secrets.wolfVotes || {};
   const acts = secrets.actions || {};
-  const st = nightStatus(roles, alive(), wv, acts, { rules: rules(), round: g.round });
+  const [seer] = livingWithRole(roles, alive(), "seer");
+  const st = nightStatus(roles, alive(), wv, acts, { rules: rules(), round: g.round, seerUsed: seer ? seerUsed(seer, g.round) : false });
   const livingWolves = livingWithRole(roles, alive(), "wolf");
 
   const line = (icon, done, content) => el("li", {}, el("span", { class: "who" }, icon), el("span", { class: done ? "ok" : "pending" }, content));
@@ -640,10 +652,12 @@ function masterNight() {
     const name = roleName(r).toLowerCase();
     let content;
     if (!holder) content = t("roleOut", name);
+    else if (r === "seer" && st.seerSpent) content = t("seerSpentLine", playerName(holder));
+    else if (acts[holder] === SKIP) content = t("seerSkipsLine", playerName(holder));
     else if (!acts[holder]) content = t("waitingFor", playerName(holder), name);
     else if (r === "seer") content = t("seerLooked", playerName(holder), playerName(acts[holder]), visionText(seerVision(roles, acts[holder], rules())));
     else content = t("actionLine", playerName(holder), t(`verb_${r}`), playerName(acts[holder]));
-    lines.push(line(ROLES[r].icon, !holder || !!acts[holder], content));
+    lines.push(line(ROLES[r].icon, !holder || !!acts[holder] || (r === "seer" && st.seerSpent), content));
   }
 
   phaseCard("night", t("night", g.round),
@@ -685,12 +699,17 @@ function playerNight() {
   }
   if (myRole === "seer") {
     const vision = visions[g.round];
+    const once = rules().seerUses === "once";
+    if (seerSpent(uid, g.round)) return phaseCard("night", title, text(t("seerSpent")), forceDawn());
+    if (myAction === SKIP) return phaseCard("night", title, text(t("seerSkipped")), forceDawn());
     if (!myAction) {
-      return phaseCard("night", title, text(rules().seerSees === "role" ? t("seerPromptRole") : t("seerPrompt")),
+      return phaseCard("night", title,
+        text(once ? t("seerPromptOnce") : rules().seerSees === "role" ? t("seerPromptRole") : t("seerPrompt")),
         choiceList(others, null, (id) => {
           if (!confirm(t("seerConfirm", playerName(id)))) return;
           return set(ref(db, `secrets/${code}/actions/${uid}`), id);
         }),
+        once && action(t("seerSkip"), run(() => set(ref(db, `secrets/${code}/actions/${uid}`), SKIP)), { cls: "secondary" }),
         forceDawn());
     }
     return phaseCard("night", title,
@@ -837,8 +856,9 @@ function renderSettings() {
   list.classList.toggle("rules-disabled", !editable);
   const r = rules();
   const save = (key, value) => set(lobbyRef("settings", "rules", key), value).catch((err) => alert(err.message));
-  list.replaceChildren(...RULE_GROUPS.flatMap(([group, keys]) => [
-    el("p", { class: "rule-group" }, t(`group_${group}`)),
+  list.replaceChildren(...RULE_GROUPS.map(([group, keys]) => el("div", { class: "rule-tile" },
+    el("div", { class: "role-title" }, group === "vote" ? t("group_vote") : roleLabel(group),
+      ROLES[group] && badge(ROLES[group].team === "wolves" ? t("teamWolves") : t("teamVillage"), `team-tag ${ROLES[group].team === "wolves" ? "wolf" : ""}`)),
     ...keys.map((key) => {
       const desc = typeof DEFAULT_RULES[key] === "boolean" ? t(`rule_${key}_desc`) : "";
       const label = el("span", { class: "rule-text" }, t(`rule_${key}`), desc && el("small", {}, desc));
@@ -852,8 +872,7 @@ function renderSettings() {
         RULE_OPTIONS[key].map((o) => el("option", { value: o }, t(`opt_${key}_${o}`))));
       select.value = r[key];
       return el("label", { class: "rule stacked" }, label, select);
-    }),
-  ]));
+    }))));
 }
 
 function changeLanguage(lang) {
@@ -871,8 +890,9 @@ function changeLanguage(lang) {
 }
 
 function renderInfoRoles() {
+  $("#guide-note").textContent = lobby ? t("guideRoom") : t("guideDefault");
+  $("#guide").innerHTML = guideHtml(rules()); // our own static text, no player input
   for (const list of document.querySelectorAll(".info-roles")) {
-    if (list.closest("[data-lang]")?.dataset.lang !== getLang()) continue;
     list.replaceChildren(...ROLE_ORDER.map((r) => {
       const role = ROLES[r];
       return el("li", {},
@@ -905,12 +925,14 @@ function answerSeer() {
   const roles = secrets.roles || {};
   const [seer] = livingWithRole(roles, alive(), "seer");
   const target = seer && secrets.actions?.[seer];
-  if (!target || secrets.visions?.[seer]?.[g.round]) return;
+  if (!target || target === SKIP || secrets.visions?.[seer]?.[g.round] || seerSpent(seer, g.round)) return;
   const key = `${g.round}:${seer}`;
   if (visionKey === key) return;
   visionKey = key;
-  set(ref(db, `secrets/${code}/visions/${seer}/${g.round}`), seerVision(roles, target, rules()))
-    .catch(() => { visionKey = null; });
+  update(ref(db), {
+    [`secrets/${code}/visions/${seer}/${g.round}`]: seerVision(roles, target, rules()),
+    [`secrets/${code}/memo/${seer}/used`]: true,
+  }).catch(() => { visionKey = null; });
 }
 
 // ---------- masterless remote: automatic steps (host's phone only) ----------
@@ -920,7 +942,9 @@ function autoAdvance() {
   if (!g || g.mode !== "remote" || !secrets) return cancelAuto();
   if (g.phase === "night") {
     if (!secretsFresh(g)) return cancelAuto();
-    const st = nightStatus(secrets.roles || {}, alive(), secrets.wolfVotes || {}, secrets.actions || {}, { rules: rules(), round: g.round });
+    const [seer] = livingWithRole(secrets.roles || {}, alive(), "seer");
+    const st = nightStatus(secrets.roles || {}, alive(), secrets.wolfVotes || {}, secrets.actions || {},
+      { rules: rules(), round: g.round, seerUsed: seer ? seerUsed(seer, g.round) : false });
     // the key includes the choices, so a change during the pause restarts it
     if (st.complete) return scheduleAuto(`night:${g.round}:${JSON.stringify([secrets.wolfVotes, secrets.actions])}`, AUTO_NIGHT_DELAY, resolveNightNow);
   } else if (g.phase === "day" && !g.vote?.done) {
@@ -1022,6 +1046,7 @@ function onLobby(data) {
   renderGame();
   renderMasterToggle();
   if ($("#settings").open) renderSettings();
+  if ($("#info").open) renderInfoRoles();
   if (firstSnapshot) {
     firstSnapshot = false;
     if (joined) show("lobby");
@@ -1220,7 +1245,7 @@ function resolveNightNow() {
   const res = resolveNightFromSecrets(g.round);
   const [seer] = livingWithRole(roles, alive(), "seer");
   const [magician] = livingWithRole(roles, alive(), "magician");
-  const seen = seer ? acts[seer] : null;
+  const seen = seer && acts[seer] !== SKIP ? acts[seer] : null;
   const updates = {
     [`secrets/${code}/nightLog/${g.round}`]: compact({ ...res, seen, seenWolf: seen ? roles[seen] === "wolf" : null }),
   };
@@ -1387,6 +1412,19 @@ function flash(msg) {
 
 // ---------- boot ----------
 
+/** Sign in anonymously; if Firebase is briefly refusing new sign-ins (too many from this network), wait and retry. */
+async function signInWithRetry(auth) {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return (await signInAnonymously(auth)).user;
+    } catch (err) {
+      if (err.code !== "auth/too-many-requests" || attempt >= 6) throw err;
+      $("#screen-loading p").textContent = t("connecting");
+      await new Promise((resolve) => setTimeout(resolve, 2000 * attempt));
+    }
+  }
+}
+
 async function main() {
   // language: saved choice, otherwise the phone's language when it's one we have
   const saved = store("lupus.lang");
@@ -1407,7 +1445,7 @@ async function main() {
   const existing = await new Promise((resolve) => {
     const stop = onAuthStateChanged(auth, (user) => { stop(); resolve(user); });
   });
-  uid = (existing || (await signInAnonymously(auth)).user).uid;
+  uid = (existing || await signInWithRetry(auth)).uid;
 
   onValue(ref(db, ".info/connected"), (snap) => {
     online = snap.val() === true;

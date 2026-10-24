@@ -16,6 +16,7 @@ export const DEFAULT_RULES = {
   firstNightKill: true,     // the wolves kill on the first night (false: they only recognise each other)
   wolvesWin: "parity",      // "parity": wolves win when as many as the others; "majority": only when more
   seerSees: "team",         // "team": wolf or not; "role": the exact role
+  seerUses: "every",        // "every" night, or "once" per game (the seer picks the night, and may skip)
   magicianSelf: false,      // the magician may protect their own house
   magicianRepeat: true,     // the magician may protect the same house two nights in a row
   mediumAwayDies: true,     // wolves attack the medium's own house while the medium is visiting elsewhere: the medium dies
@@ -26,6 +27,7 @@ export const DEFAULT_RULES = {
 export const RULE_OPTIONS = {
   wolvesWin: ["parity", "majority"],
   seerSees: ["team", "role"],
+  seerUses: ["every", "once"],
   secondTie: ["none", "random"],
   reveal: ["none", "voted", "all"],
 };
@@ -85,13 +87,24 @@ export function protectable(roles, alive, rules, lastProtected = null) {
   return aliveIds(alive).filter((id) => (r.magicianSelf || id !== magician) && (r.magicianRepeat || id !== lastProtected));
 }
 
+/** The seer's choice when they keep their power for another night ("once per game" rule). */
+export const SKIP = "skip";
+
+/** Whether the seer may still look tonight: always, unless the power is once per game and already used. */
+export const seerCanLook = (rules, usedBefore) => withDefaults(rules).seerUses !== "once" || !usedBefore;
+
+/** True if the seer had a vision in a night before `round`. `visions` is { round: vision }. */
+export const seerUsedBefore = (visions, round) => Object.keys(visions || {}).some((r) => Number(r) < round && visions[r]);
+
 /** Night status per role, used to tell who still has to act. */
-export function nightStatus(roles, alive, wolfVotes = {}, actions = {}, { rules, round = 1 } = {}) {
+export function nightStatus(roles, alive, wolfVotes = {}, actions = {}, { rules, round = 1, seerUsed = false } = {}) {
   const wolves = wolfTarget(roles, alive, wolfVotes);
   const wolvesDone = !wolvesAct(rules, round) || wolves.agreed;
   const holders = Object.fromEntries(NIGHT_ROLES.map((r) => [r, livingWithRole(roles, alive, r)[0] || null]));
-  const complete = wolvesDone && NIGHT_ROLES.every((r) => !holders[r] || !!actions[holders[r]]);
-  return { wolves, wolvesDone, ...holders, complete };
+  const seerSpent = !seerCanLook(rules, seerUsed);
+  const done = (r) => !holders[r] || !!actions[holders[r]] || (r === "seer" && seerSpent);
+  const complete = wolvesDone && NIGHT_ROLES.every(done);
+  return { wolves, wolvesDone, ...holders, seerSpent, complete };
 }
 
 /** What the seer learns about `target`. */

@@ -201,7 +201,9 @@ code { background: var(--bg-2); padding: 1px 6px; border-radius: 6px; font-size:
 .voters { display: block; color: var(--muted); font-size: .8rem; }
 .tally { min-width: 1.8em; text-align: center; font-weight: 700; color: var(--accent-2); }
 
-.plain-list li.dead .pname { text-decoration: line-through; color: var(--muted); }
+.plain-list li.dead .pname { color: var(--muted); }
+.plain-list li.dead .dot { opacity: .4; }
+.skull { font-size: 1rem; line-height: 1; opacity: .85; }
 .winner { text-align: center; font-size: 1.4rem; font-family: Georgia, "Times New Roman", serif; margin: 4px 0 14px; }
 
 #card-log h2 { margin-bottom: 8px; }
@@ -285,3 +287,11 @@ html[lang="it"] [data-lang="en"], html[lang="en"] [data-lang="it"] { display: no
 .vision.wolf { color: #fff; background: var(--accent); }
 .visions { margin: 6px 0 0; font-size: .85rem; color: var(--text); }
 .lang span { white-space: nowrap; }
+
+/* settings tiles, one per role (same look as the role cards in the guide) */
+.rule-tile { margin: 10px 0; padding: 12px 14px 4px; border-radius: 10px; background: var(--bg-2); border: 1px solid var(--line); }
+.rule-tile .role-title { display: flex; align-items: center; gap: 8px; color: var(--text); font-weight: 700; margin-bottom: 2px; }
+.rule-tile .team-tag { margin-left: auto; font-size: .72rem; font-weight: 600; }
+.rule-tile .rule:first-of-type { border-top: none; }
+.rule-tile select { background: var(--card); }
+.guide-note { margin: 14px 0 0 !important; padding: 10px 12px; border-radius: 10px; background: var(--bg-2); color: var(--text) !important; font-size: .9rem; }
