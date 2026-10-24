@@ -314,3 +314,34 @@ html[lang="it"] [data-lang="en"], html[lang="en"] [data-lang="it"] { display: no
 .winner { display: flex; align-items: center; justify-content: center; gap: 10px; }
 .winner .ri { width: 40px; height: 40px; }
 .sheet-body strong .ri { width: 1.4em; height: 1.4em; }
+
+/* interface icons */
+.top-btn { display: inline-flex; align-items: center; gap: 6px; }
+.top-btn .ri { width: 22px; height: 22px; vertical-align: middle; }
+#card-phase h2 { display: flex; align-items: center; gap: 8px; }
+#card-phase h2 .ri { width: 30px; height: 30px; }
+button .ri { width: 22px; height: 22px; vertical-align: -5px; margin-right: 6px; }
+.mode strong { display: inline-flex; align-items: center; gap: 6px; }
+.mode strong .ri { width: 24px; height: 24px; }
+.lang span { display: inline-flex; align-items: center; gap: 6px; }
+.lang .ri { width: 24px; height: 24px; }
+.sheet-head h2 { display: flex; align-items: center; gap: 8px; }
+.sheet-head h2 .ri { width: 28px; height: 28px; }
+.sheet-body h3 .ri { width: 26px; height: 26px; vertical-align: -6px; margin-right: 4px; }
+.big-news { display: flex; align-items: center; justify-content: center; gap: 10px; }
+.big-news .ri { width: 36px; height: 36px; }
+.news.with-icon .ri, .secret-note .ri { width: 26px; height: 26px; }
+.secret-note { align-items: flex-start; }
+#game-log .secret { display: flex; align-items: flex-start; gap: 4px; }
+#game-log .secret .ri { width: 1.3em; height: 1.3em; flex: none; }
+.vision { display: flex; align-items: center; justify-content: center; gap: 8px; }
+.vision .ri { width: 26px; height: 26px; }
+.legend .dot { display: inline-block; vertical-align: middle; margin: 0 5px 0 10px; }
+.legend .dot:first-child { margin-left: 0; }
+.skull.ri { width: 22px; height: 22px; }
+.rule-tile .role-title .ri { width: 28px; height: 28px; }
+
+/* rules on the left, settings on the right: the header moon stays clear between them */
+.top-buttons { left: 12px; right: 12px; justify-content: space-between; pointer-events: none; }
+.top-buttons .top-btn { pointer-events: auto; }
+.top-btn .ri { margin-right: 0; }

@@ -141,6 +141,13 @@ const seerSpent = (seerId, round) => !seerCanLook(rules(), seerUsed(seerId, roun
 const runnerName = () => (lobby.masterId ? t("theMaster") : t("hostOf", playerName(lobby.hostId)));
 /** The role's pixel-art icon (icons/<role>.svg). */
 const roleIcon = (r, cls = "ri") => el("img", { class: cls, src: `icons/${r}.svg`, alt: "" });
+/** An interface icon (icons/ui/<name>.svg): moon, sun, dawn, skull, scales, lock, yes, no, ... */
+const uiIcon = (name, attrs = {}) => el("img", { class: "ri", src: `icons/ui/${name}.svg`, alt: "", ...attrs });
+const nightTitle = (r) => [uiIcon("moon"), t("night", r)];
+const dayTitle = (r) => [uiIcon("sun"), t("day", r)];
+const startNightLabel = (r) => [uiIcon("moon"), t("startNight", r)];
+/** A note only the master sees, marked with a lock. */
+const secretNote = (s) => el("p", { class: "secret-note with-icon" }, uiIcon("lock"), el("span", {}, s));
 /** A paragraph led by a role's icon. */
 const iconText = (r, s, cls = "phase-text") => el("p", { class: `${cls} with-icon` }, roleIcon(r), el("span", {}, s));
 /** Team tag for the guide and settings tiles. */
@@ -231,7 +238,7 @@ function playerRow(id, name) {
     : el("span", { class: "dot" + (isOnline(id) ? "" : " off"), title: isOnline(id) ? t("online") : t("offline") });
   const li = el("li", { class: isDead(id) ? "dead" : "" }, dot, el("span", { class: "pname" }, name));
   if (id === uid) li.append(badge(t("you"), "you"));
-  if (isDead(id)) li.append(el("span", { class: "skull", title: t("out"), "aria-label": t("out") }, "💀"));
+  if (isDead(id)) li.append(uiIcon("skull", { class: "ri skull", alt: t("out"), title: t("out") }));
   return li;
 }
 
@@ -469,13 +476,14 @@ function seenStatus(legend = true) {
   const n = inGame().length;
   return [
     text(everyoneSeen() ? t("seenAll") : t("seenCount", seenCount(), n), "seen-note"),
-    legend && text(t("seenLegend"), "muted small"),
+    legend && el("p", { class: "muted small legend" },
+      el("span", { class: "dot" }), t("seenLegendYes"), el("span", { class: "dot waiting" }), t("seenLegendNo")),
   ];
 }
 
 function startFirstNight() {
   const ready = everyoneSeen();
-  return action(ready ? t("startNight", 1) : t("waitSeen"), run(startNight), { disabled: !ready });
+  return action(ready ? startNightLabel(1) : t("waitSeen"), run(startNight), { disabled: !ready });
 }
 
 function masterAssigned() {
@@ -514,9 +522,10 @@ function liveNight() {
     : null;
   const stepRole = { wolves: "wolf", masons: "mason", seer: "seer", magician: "magician", medium: "medium" };
   const progress = el("ul", { class: "steps" }, steps.map((s, i) =>
-    el("li", { class: i === idx ? "on" : i < idx ? "done" : "" }, stepRole[s] && roleIcon(stepRole[s]), t(`step_${s}`))));
+    el("li", { class: i === idx ? "on" : i < idx ? "done" : "" },
+      stepRole[s] ? roleIcon(stepRole[s]) : uiIcon(s === "sleep" ? "moon" : "dawn"), t(`step_${s}`))));
   const living = aliveIds(alive());
-  const title = t("night", g.round);
+  const title = nightTitle(g.round);
 
   if (step === "sleep") {
     return phaseCard("night", title, progress, say(t("saySleep")), action(t("callWolves"), run(() => go())));
@@ -573,7 +582,7 @@ function liveNight() {
     if (step === "seer" && liveSel) {
       const v = seerVision(roles, liveSel, rules());
       answer = [
-        el("p", { class: "vision" + (v.wolf ? " wolf" : "") }, v.role ? t("seerRole", roleName(v.role)) : v.wolf ? t("seerYes") : t("seerNo")),
+        el("p", { class: "vision" + (v.wolf ? " wolf" : "") }, v.role ? t("seerRole", roleName(v.role)) : [uiIcon(v.wolf ? "yes" : "no"), v.wolf ? t("seerYes") : t("seerNo")]),
         text(v.role ? t("seerSignalRole") : t("seerSignal"), "muted small"),
       ];
     }
@@ -592,9 +601,9 @@ function liveNight() {
   const res = resolveNightFromSecrets(g.round);
   return phaseCard("night", title, progress,
     say(t("sayDawn")),
-    el("p", { class: "big-news" }, res.victim ? t("victimBig", playerName(res.victim)) : t("nobodyBig")),
-    res.reason !== "killed" && text(t("onlyForYou", describeNight(res)), "secret-note"),
-    res.converted && text(t("convertedNote", playerName(res.converted)), "secret-note"),
+    el("p", { class: "big-news" }, uiIcon(res.victim ? "skull" : "dawn"), res.victim ? t("victimBig", playerName(res.victim)) : t("nobodyBig")),
+    res.reason !== "killed" && secretNote(t("onlyForYou", describeNight(res))),
+    res.converted && secretNote(t("convertedNote", playerName(res.converted))),
     action(t("announceDay"), run(resolveNightNow)),
     back);
 }
@@ -606,7 +615,7 @@ function liveDay() {
   const vote = g.vote || { ballot: 1 };
   const living = aliveIds(alive());
   const candidates = vote.candidates ? Object.keys(vote.candidates) : living;
-  const title = t("day", g.round);
+  const title = dayTitle(g.round);
   const news = nightNews();
 
   if (vote.done) return dayResult(title, news, vote);
@@ -642,13 +651,13 @@ function liveDay() {
 // --- live mode (players' phones) ---
 
 function livePlayerNight() {
-  phaseCard("night", t("night", game().round), text(isDead(uid) ? t("liveNightDead") : t("liveNight")));
+  phaseCard("night", nightTitle(game().round), text(isDead(uid) ? t("liveNightDead") : t("liveNight")));
 }
 
 function livePlayerDay() {
   const g = game();
   const vote = g.vote || { ballot: 1 };
-  const title = t("day", g.round);
+  const title = dayTitle(g.round);
   if (vote.done) return dayResult(title, nightNews(), vote);
   phaseCard("day", title, nightNews(),
     text(vote.ballot === 2 ? t("liveRunoff", listNames(Object.keys(vote.candidates || {}))) : t("liveVote")));
@@ -685,11 +694,11 @@ function masterNight() {
     lines.push(line(roleIcon(r), !holder || !!acts[holder] || (r === "seer" && st.seerSpent), content));
   }
 
-  phaseCard("night", t("night", g.round),
+  phaseCard("night", nightTitle(g.round),
     text(t("remoteNightIntro")),
     el("ul", { class: "status" }, lines),
     text(t("ifResolveNow", describeNight(resolveNightFromSecrets(g.round))), "preview"),
-    action(t("dawnButton"), () => {
+    action([uiIcon("dawn"), t("dawnButton")], () => {
       if (!st.complete && !confirm(t("confirmIncomplete"))) return;
       run(resolveNightNow)();
     }));
@@ -701,7 +710,7 @@ const forceDawn = () => hostTools(action(t("forceDawn"), () => {
 
 function playerNight() {
   const g = game();
-  const title = t("night", g.round);
+  const title = nightTitle(g.round);
   const living = aliveIds(alive());
   const others = living.filter((id) => id !== uid);
 
@@ -764,10 +773,10 @@ function nightNews() {
   const night = logEntries().find((e) => e.type === "night" && e.round === g.round);
   const shown = night?.victim && g.revealed?.[night.victim];
   return [
-    el("p", { class: "news" + (night?.victim ? " death" : "") },
+    el("p", { class: "news with-icon" + (night?.victim ? " death" : "") }, uiIcon(night?.victim ? "skull" : "dawn"),
       night?.victim ? t("newsVictim", playerName(night.victim)) + (shown ? t("wasRole", roleName(shown)) : "") : t("newsNobody")),
     // only on the bitten prole's own phone
-    bittenRound === g.round && el("p", { class: "news death" }, t("bitten")),
+    bittenRound === g.round && el("p", { class: "news death with-icon" }, roleIcon("wolf"), t("bitten")),
   ];
 }
 
@@ -778,8 +787,8 @@ function dayResult(title, news, vote) {
     ? (vote.drawn ? t("drawnBy", playerName(vote.eliminated)) : t("eliminatedBy", playerName(vote.eliminated)))
       + (shown ? t("wasRole", roleName(shown)) : "")
     : t("nobodyEliminated");
-  const next = action(t("startNight", g.round + 1), run(startNight));
-  return phaseCard("day", title, news, el("p", { class: "news death" }, result),
+  const next = action(startNightLabel(g.round + 1), run(startNight));
+  return phaseCard("day", title, news, el("p", { class: "news death with-icon" }, uiIcon("scales"), result),
     isMaster() ? next : isHostOnly() ? hostTools(next)
       : text(t("waitNight", lobby.masterId ? t("theMaster") : playerName(lobby.hostId))));
 }
@@ -794,13 +803,13 @@ function renderDay() {
   const r = rules();
   const { counts } = tallyVotes(votes, alive(), vote.candidates || null, r);
   const voted = votedCount(votes, vote, living);
-  const title = t("day", g.round);
+  const title = dayTitle(g.round);
 
   if (vote.done) return dayResult(title, nightNews(), vote);
 
   const voters = (id) => {
     const who = Object.keys(votes).filter((v) => votes[v] === id && alive()[v] === true && (v !== id || r.selfVote));
-    return who.length ? el("span", { class: "voters" }, `👉 ${listNames(who)}`) : null;
+    return who.length ? el("span", { class: "voters" }, listNames(who)) : null;
   };
   const canVote = !master && !isDead(uid);
   const shown = candidates
@@ -814,7 +823,7 @@ function renderDay() {
   const everyone = voted === living.length;
   phaseCard("day", title, nightNews(), text(intro), list,
     text(everyone && !lobby.masterId ? t("allVoted") : t("votedCount", voted, living.length), "muted small"),
-    master && action(t("closeVote"), () => {
+    master && action([uiIcon("scales"), t("closeVote")], () => {
       if (!everyone && !confirm(t("confirmCloseVote"))) return;
       run(closeVoteNow)();
     }),
@@ -856,11 +865,11 @@ function renderLog() {
     if (e.type === "night") {
       const detail = nightLog[e.round];
       const secret = [];
-      if (detail && detail.reason !== "killed" && detail.reason !== "pending") secret.push(`🔒 ${describeNight(detail)}`);
+      if (detail && detail.reason !== "killed" && detail.reason !== "pending") secret.push(describeNight(detail));
       if (detail?.seen) secret.push(t("logSeer", playerName(detail.seen), detail.seenWolf ? t("aWolf") : t("notAWolf")));
       return el("li", {}, t("logNight", e.round),
         e.victim ? [t("logKilled"), el("strong", {}, playerName(e.victim))] : t("logNoDeath"),
-        secret.map((s) => el("span", { class: "secret" }, s)));
+        secret.map((s) => el("span", { class: "secret" }, uiIcon("lock"), s)));
     }
     if (e.runoff) return el("li", {}, t("logRunoff", e.round, listNames(e.runoff)));
     const votes = e.votes != null ? ` (${t("votes", e.votes)})` : "";
@@ -887,7 +896,7 @@ function renderSettings() {
   const r = rules();
   const save = (key, value) => set(lobbyRef("settings", "rules", key), value).catch((err) => alert(err.message));
   list.replaceChildren(...RULE_GROUPS.map(([group, keys]) => el("div", { class: "rule-tile" },
-    el("div", { class: "role-title" }, group === "vote" ? t("group_vote") : [roleIcon(group), roleName(group)],
+    el("div", { class: "role-title" }, group === "vote" ? [uiIcon("scales"), t("group_vote")] : [roleIcon(group), roleName(group)],
       ROLES[group] && teamBadge(ROLES[group].team)),
     ...keys.map((key) => {
       const desc = typeof DEFAULT_RULES[key] === "boolean" ? t(`rule_${key}_desc`) : "";

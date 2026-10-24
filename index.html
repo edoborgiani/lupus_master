@@ -9,8 +9,8 @@
 </head>
 <body>
   <div class="top-buttons">
-    <button class="top-btn" id="btn-info" aria-haspopup="dialog" data-i18n="info">📖 Regole</button>
-    <button class="top-btn" id="btn-settings" aria-haspopup="dialog" data-i18n-aria="settings" data-i18n-title="settings">⚙️</button>
+    <button class="top-btn" id="btn-info" aria-haspopup="dialog"><img class="ri" src="icons/ui/book.svg" alt=""><span data-i18n="info"></span></button>
+    <button class="top-btn" id="btn-settings" aria-haspopup="dialog" data-i18n-aria="settings" data-i18n-title="settings"><img class="ri" src="icons/ui/gear.svg" alt=""></button>
   </div>
 
   <main>
@@ -83,11 +83,11 @@
         <div class="modes" role="radiogroup" data-i18n-aria="modeTitle">
           <label class="mode" id="mode-live">
             <input type="radio" name="mode" value="live">
-            <span><strong data-i18n="modeLive"></strong><small data-i18n="modeLiveDesc"></small></span>
+            <span><strong><img class="ri" src="icons/ui/live.svg" alt=""><span data-i18n="modeLive"></span></strong><small data-i18n="modeLiveDesc"></small></span>
           </label>
           <label class="mode" id="mode-remote">
             <input type="radio" name="mode" value="remote">
-            <span><strong data-i18n="modeRemote"></strong><small data-i18n="modeRemoteDesc"></small></span>
+            <span><strong><img class="ri" src="icons/ui/remote.svg" alt=""><span data-i18n="modeRemote"></span></strong><small data-i18n="modeRemoteDesc"></small></span>
           </label>
         </div>
         <button class="primary" id="btn-start" data-i18n="start"></button>
@@ -172,14 +172,14 @@
   <!-- Settings: language (per phone) and the room's house rules -->
   <dialog id="settings" class="sheet" aria-labelledby="settings-title">
     <div class="sheet-head">
-      <h2 id="settings-title" data-i18n="settingsTitle"></h2>
+      <h2 id="settings-title"><img class="ri" src="icons/ui/gear.svg" alt=""><span data-i18n="settingsTitle"></span></h2>
       <button class="link close" id="btn-settings-close" data-i18n-aria="close">✕</button>
     </div>
     <div class="sheet-body">
       <h3 data-i18n="language"></h3>
       <div class="lang-switch" role="radiogroup" data-i18n-aria="language">
-        <label class="lang"><input type="radio" name="lang" value="it"><span>🇮🇹 Italiano</span></label>
-        <label class="lang"><input type="radio" name="lang" value="en"><span>🇬🇧 English</span></label>
+        <label class="lang"><input type="radio" name="lang" value="it"><span><img class="ri" src="icons/ui/flag-it.svg" alt=""> Italiano</span></label>
+        <label class="lang"><input type="radio" name="lang" value="en"><span><img class="ri" src="icons/ui/flag-gb.svg" alt=""> English</span></label>
       </div>
       <h3 data-i18n="roomRules"></h3>
       <p class="muted small" id="rules-note"></p>
@@ -190,7 +190,7 @@
   <!-- Rules guide, one block per language -->
   <dialog id="info" class="sheet" aria-labelledby="info-title">
     <div class="sheet-head">
-      <h2 id="info-title"><span data-lang="it">📖 Regole del gioco</span><span data-lang="en">📖 Game rules</span></h2>
+      <h2 id="info-title"><img class="ri" src="icons/ui/book.svg" alt=""><span data-lang="it">Regole del gioco</span><span data-lang="en">Game rules</span></h2>
       <button class="link close" id="btn-info-close" data-i18n-aria="close">✕</button>
     </div>
 
