@@ -151,8 +151,7 @@ const secretNote = (s) => el("p", { class: "secret-note with-icon" }, uiIcon("lo
 /** A paragraph led by a role's icon. */
 const iconText = (r, s, cls = "phase-text") => el("p", { class: `${cls} with-icon` }, roleIcon(r), el("span", {}, s));
 /** Team tag for the guide and settings tiles. */
-const teamBadge = (team) => badge([roleIcon(team === "wolves" ? "wolf" : "citizen"), team === "wolves" ? t("teamWolves") : t("teamVillage")],
-  `team-tag ${team === "wolves" ? "wolf" : ""}`);
+const teamBadge = (team) => badge(team === "wolves" ? t("teamWolves") : t("teamVillage"), `team-tag ${team === "wolves" ? "wolf" : ""}`);
 const visionText = (v) => (v.role ? t("isRole", playerName(v.target), roleName(v.role))
   : v.wolf ? t("isWolf", playerName(v.target)) : t("notWolf", playerName(v.target)));
 const formatCounts = (counts) => ROLE_ORDER.filter((r) => counts[r] > 0)
