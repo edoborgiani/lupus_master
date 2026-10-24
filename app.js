@@ -773,7 +773,7 @@ function renderLog() {
 
 function answerSeer() {
   const g = game();
-  if (g?.phase !== "night" || !secrets) return;
+  if (g?.phase !== "night" || !secretsFresh(g)) return;
   const roles = secrets.roles || {};
   const [seer] = livingWithRole(roles, alive(), "seer");
   const target = seer && secrets.actions?.[seer];
@@ -791,6 +791,7 @@ function autoAdvance() {
   const g = game();
   if (!g || g.mode !== "remote" || !secrets) return cancelAuto();
   if (g.phase === "night") {
+    if (!secretsFresh(g)) return cancelAuto();
     const st = nightStatus(secrets.roles || {}, alive(), secrets.wolfVotes || {}, secrets.actions || {});
     // the key includes the choices, so a change during the pause restarts it
     if (st.complete) return scheduleAuto(`night:${g.round}:${JSON.stringify([secrets.wolfVotes, secrets.actions])}`, AUTO_NIGHT_DELAY, resolveNightNow);
@@ -1029,16 +1030,25 @@ async function assignRoles() {
 }
 
 function startNight() {
+  const round = (game().round || 0) + 1;
   return update(ref(db), {
     [gamePath("phase")]: "night",
-    [gamePath("round")]: (game().round || 0) + 1,
+    [gamePath("round")]: round,
     [gamePath("step")]: "sleep",
     [gamePath("vote")]: null,
     [`lobbies/${code}/votes`]: null,
     [`secrets/${code}/wolfVotes`]: null,
     [`secrets/${code}/actions`]: null,
+    // marks the secrets as belonging to this night (see secretsFresh)
+    [`secrets/${code}/nightLog/${round}`]: { reason: "pending" },
   });
 }
+
+/**
+ * The lobby and the secrets arrive through separate listeners, so for a moment the controller can see the
+ * new night's round together with last night's choices. Only act on the secrets once this night's marker is there.
+ */
+const secretsFresh = (g) => secrets?.nightLog?.[g.round]?.reason === "pending";
 
 /** Writes shared by night and vote results: log entry, death, and the end of the game if someone won. */
 function outcome(updates, entry, victim) {
