@@ -8,11 +8,11 @@ export const LANGS = ["it", "en"];
 const ROLE_NAMES = {
   it: {
     wolf: ["Lupo", "Lupi"], seer: ["Veggente", "Veggenti"], magician: ["Mago", "Maghi"],
-    medium: ["Medium", "Medium"], citizen: ["Cittadino", "Cittadini"],
+    medium: ["Medium", "Medium"], mason: ["Massone", "Massoni"], prole: ["Prole", "Prole"], citizen: ["Cittadino", "Cittadini"],
   },
   en: {
     wolf: ["Wolf", "Wolves"], seer: ["Seer", "Seers"], magician: ["Magician", "Magicians"],
-    medium: ["Medium", "Mediums"], citizen: ["Citizen", "Citizens"],
+    medium: ["Medium", "Mediums"], mason: ["Mason", "Masons"], prole: ["Cursed", "Cursed"], citizen: ["Citizen", "Citizens"],
   },
 };
 
@@ -26,6 +26,9 @@ const ROLE_DESC = {
       + (r.magicianRepeat ? "" : " Non puoi proteggere la stessa casa due notti di fila."),
     medium: (r) => "Ogni notte vai a casa di un altro giocatore. Se i lupi attaccano quella casa, muori tu al suo posto. "
       + (r.mediumAwayDies ? "Se attaccano casa tua mentre sei fuori, muori comunque." : "Se attaccano casa tua mentre sei fuori, ti salvi."),
+    mason: () => "Sei un massone: conosci gli altri massoni e loro conoscono te. Siete abitanti del villaggio: aiutatevi a scoprire i lupi.",
+    prole: (r) => "Sembri un semplice abitante del villaggio, ma se i lupi ti attaccano non muori: diventi uno di loro e da quel momento giochi con il branco."
+      + (r.seerSeesProle === "wolf" ? " Il veggente ti vede già come un lupo." : ""),
     citizen: () => "Sei un semplice abitante del villaggio. Di giorno discuti e vota per scoprire ed eliminare i lupi.",
   },
   en: {
@@ -36,6 +39,9 @@ const ROLE_DESC = {
       + (r.magicianRepeat ? "" : " You can't protect the same house two nights in a row."),
     medium: (r) => "Each night you visit another player's house. If the wolves attack it, you die in their place. "
       + (r.mediumAwayDies ? "If they attack your own house while you are away, you die anyway." : "If they attack your own house while you are away, you survive."),
+    mason: () => "You are a mason: you know the other masons and they know you. You're on the village's side: help each other find the wolves.",
+    prole: (r) => "You look like an ordinary villager, but if the wolves attack you, you don't die: you become one of them and from then on you play with the pack."
+      + (r.seerSeesProle === "wolf" ? " The seer already sees you as a wolf." : ""),
     citizen: () => "You are an ordinary villager. During the day, discuss and vote to find and eliminate the wolves.",
   },
 };
@@ -47,6 +53,8 @@ const ROLE_INFO = {
     seer: "Una volta scelto il giocatore, la visione non si può cambiare. Usa ciò che scopri per guidare il villaggio, ma se i lupi capiscono chi sei, sarai il loro prossimo bersaglio.",
     magician: "La protezione vale per tutta la casa: se il medium è in visita lì, è salvo anche lui.",
     medium: "Non puoi visitare te stesso. Se il mago protegge la casa che visiti, vi salvate entrambi.",
+    mason: "Di giorno potete garantire l'uno per l'altro, ma attenzione: se vi esponete troppo, i lupi sapranno chi colpire.",
+    prole: "Finché non vieni morso giochi per il villaggio. Se vieni morso, il tuo telefono te lo dice e il branco ti accoglie: da lì in poi vinci con i lupi. Al villaggio si annuncia che quella notte nessuno è morto.",
     citizen: "Non hai poteri notturni, ma il tuo voto conta: osserva, ascolta e smaschera i lupi.",
   },
   en: {
@@ -54,6 +62,8 @@ const ROLE_INFO = {
     seer: "Once you pick a player, the vision can't be changed. Use what you learn to guide the village, but if the wolves figure out who you are, you'll be next.",
     magician: "The protection covers the whole house: if the medium is visiting, they are safe too.",
     medium: "You can't visit yourself. If the magician protects the house you visit, you are both safe.",
+    mason: "During the day you can vouch for each other, but careful: if you expose yourselves too much, the wolves will know who to strike.",
+    prole: "Until you're bitten you play for the village. If you're bitten, your phone tells you and the pack welcomes you: from then on you win with the wolves. The village is told that nobody died that night.",
     citizen: "You have no night powers, but your vote counts: watch, listen and unmask the wolves.",
   },
 };
@@ -208,6 +218,20 @@ const STRINGS = {
     seerSkipsLine: (n) => `${n} non usa il potere stanotte`, seerSpentLine: (n) => `${n} ha già usato il suo potere`,
     seerSpentLive: (icon, n) => `${icon} ${n} ha già usato il suo potere. Chiamalo comunque, così nessuno se ne accorge, poi continua.`,
     seerSkipLive: "Non lo usa stanotte",
+    err_oneMason: "I massoni devono essere almeno 2.", zeroOrTwo: "0 oppure almeno 2",
+    yourMasons: (n) => `I tuoi confratelli massoni: ${n}`,
+    bitten: "🐺 Stanotte i lupi ti hanno morso: ora sei un lupo! Da adesso giochi con il branco.",
+    secretProle: "In segreto sei la Prole: per ora credi di essere un Cittadino.",
+    step_masons: "🤝 Massoni", sayMasons: "Massoni, aprite gli occhi e riconoscetevi.",
+    masonsAre: (n) => `🤝 I massoni sono ${n}. Lasciali guardarsi, poi continua.`,
+    masonsOut: "🤝 I massoni sono tutti fuori gioco. Chiamali comunque, aspetta qualche secondo e continua.",
+    thenMasons: "Poi: “Massoni, chiudete gli occhi.”",
+    res_converted: (a) => `i lupi attaccano ${a}, che è la Prole: non muore, ma diventa un lupo!`,
+    convertedNote: (n) => `Fai sapere a ${n} in segreto che ora è un lupo (lo vede anche sul telefono): dalla prossima notte si sveglia con il branco.`,
+    exProle: " (ex Prole)",
+    rule_masonsWake: "Dal vivo, i massoni vengono chiamati…", opt_masonsWake_first: "solo la prima notte", opt_masonsWake_every: "ogni notte",
+    rule_proleKnows: "La Prole sa di essere la Prole", rule_proleKnows_desc: "Se disattivato, crede di essere un Cittadino finché non viene morsa.",
+    rule_seerSeesProle: "Prima del morso, il veggente vede la Prole come…", opt_seerSeesProle_village: "non lupo", opt_seerSeesProle_wolf: "lupo",
     guideRoom: "📌 Queste sono le regole scelte per questa stanza.",
     guideDefault: "📌 Queste sono le regole predefinite: chi guida la partita può cambiarle nelle ⚙️ impostazioni.",
   },
@@ -349,6 +373,20 @@ const STRINGS = {
     seerSkipsLine: (n) => `${n} doesn't use the power tonight`, seerSpentLine: (n) => `${n} has already used their power`,
     seerSpentLive: (icon, n) => `${icon} ${n} has already used their power. Call them anyway, so nobody notices, then continue.`,
     seerSkipLive: "Not using it tonight",
+    err_oneMason: "There must be at least 2 masons.", zeroOrTwo: "0 or at least 2",
+    yourMasons: (n) => `Your fellow masons: ${n}`,
+    bitten: "🐺 Tonight the wolves bit you: you are now a wolf! From now on you play with the pack.",
+    secretProle: "Secretly you are the Cursed: for now you believe you are a Citizen.",
+    step_masons: "🤝 Masons", sayMasons: "Masons, open your eyes and recognise each other.",
+    masonsAre: (n) => `🤝 The masons are ${n}. Let them look at each other, then continue.`,
+    masonsOut: "🤝 The masons are all out. Call them anyway, wait a few seconds, then continue.",
+    thenMasons: "Then: “Masons, close your eyes.”",
+    res_converted: (a) => `the wolves attack ${a}, who is the Cursed: they don't die, they become a wolf!`,
+    convertedNote: (n) => `Let ${n} know in secret that they are now a wolf (their phone shows it too): from the next night they wake up with the pack.`,
+    exProle: " (formerly Cursed)",
+    rule_masonsWake: "In live games, the masons are called…", opt_masonsWake_first: "only on the first night", opt_masonsWake_every: "every night",
+    rule_proleKnows: "The Cursed knows they are the Cursed", rule_proleKnows_desc: "If off, they believe they are a Citizen until bitten.",
+    rule_seerSeesProle: "Before the bite, the seer sees the Cursed as…", opt_seerSeesProle_village: "not a wolf", opt_seerSeesProle_wolf: "a wolf",
     guideRoom: "📌 These are the rules chosen for this room.",
     guideDefault: "📌 These are the default rules: whoever runs the game can change them in the ⚙️ settings.",
   },
@@ -377,7 +415,7 @@ const GUIDE = {
         discute e vota per eliminare chi sospetta essere un lupo. Nessuno conosce il ruolo degli altri: bisogna osservare,
         ragionare e convincere.</p>
       <ul>
-        <li><strong>🏡 Il villaggio</strong> (Cittadini, Veggente, Mago, Medium) vince quando <strong>tutti i lupi sono stati eliminati</strong>.</li>
+        <li><strong>🏡 Il villaggio</strong> (Cittadini, Veggente, Mago, Medium, Massoni, Prole) vince quando <strong>tutti i lupi sono stati eliminati</strong>.</li>
         <li><strong>🐺 I lupi</strong> vincono quando ${r.wolvesWin === "majority"
           ? "<strong>sono più degli altri giocatori</strong> (ad esempio 2 lupi contro 1 abitante)"
           : "<strong>sono tanti quanti gli altri giocatori</strong> (ad esempio 2 lupi contro 2 abitanti)"}.</li>
@@ -390,6 +428,7 @@ const GUIDE = {
       <ol>
         <li><strong>I lupi</strong> aprono gli occhi, si riconoscono e indicano insieme la vittima: devono essere tutti d'accordo.${r.firstNightKill ? ""
           : " <strong>La prima notte si riconoscono soltanto</strong>, senza uccidere."}</li>
+        <li><strong>I massoni</strong> (se in gioco) aprono gli occhi e si riconoscono ${r.masonsWake === "every" ? "<strong>ogni notte</strong>" : "<strong>solo la prima notte</strong>"}.</li>
         <li><strong>Il veggente</strong> indica un giocatore e scopre ${r.seerSees === "role" ? "<strong>il suo ruolo esatto</strong>" : "<strong>se è un lupo</strong> oppure no"}.${r.seerUses === "once"
           ? " Può farlo <strong>una sola volta per partita</strong>, nella notte che preferisce; le altre notti viene chiamato lo stesso." : ""}</li>
         <li><strong>Il mago</strong> indica la casa da proteggere (${r.magicianSelf ? "anche la propria" : "non la propria"}).${r.magicianRepeat
@@ -406,6 +445,7 @@ const GUIDE = {
         <li>${r.mediumAwayDies
           ? "Se i lupi attaccano la casa del medium mentre è fuori in visita, <strong>il medium muore comunque</strong>."
           : "Se i lupi attaccano la casa del medium mentre è fuori in visita, <strong>il medium si salva</strong>: non è in casa."}</li>
+        <li>Se i lupi attaccano <strong>la Prole</strong>, non muore: <strong>diventa un lupo</strong> e da quel momento gioca con il branco.</li>
         <li>Altrimenti muore la vittima dei lupi.</li>
       </ul>
       <p>Il master annuncia solo chi è morto, non il perché.${r.reveal === "all" ? " Il ruolo della vittima viene rivelato a tutti." : ""}</p>
@@ -450,7 +490,7 @@ const GUIDE = {
         and votes to eliminate whoever they suspect is a wolf. Nobody knows the others' roles: you have to watch, reason
         and persuade.</p>
       <ul>
-        <li><strong>🏡 The village</strong> (Citizens, Seer, Magician, Medium) wins when <strong>all the wolves have been eliminated</strong>.</li>
+        <li><strong>🏡 The village</strong> (Citizens, Seer, Magician, Medium, Masons, Cursed) wins when <strong>all the wolves have been eliminated</strong>.</li>
         <li><strong>🐺 The wolves</strong> win when ${r.wolvesWin === "majority"
           ? "<strong>they outnumber the other players</strong> (for example 2 wolves against 1 villager)"
           : "<strong>they are as many as the other players</strong> (for example 2 wolves against 2 villagers)"}.</li>
@@ -463,6 +503,7 @@ const GUIDE = {
       <ol>
         <li><strong>The wolves</strong> open their eyes, recognise each other and point at their victim together: they must all agree.${r.firstNightKill ? ""
           : " <strong>On the first night they only recognise each other</strong>, without killing."}</li>
+        <li><strong>The masons</strong> (if in the game) open their eyes and recognise each other ${r.masonsWake === "every" ? "<strong>every night</strong>" : "<strong>on the first night only</strong>"}.</li>
         <li><strong>The seer</strong> points at a player and learns ${r.seerSees === "role" ? "<strong>their exact role</strong>" : "<strong>whether they are a wolf</strong>"}.${r.seerUses === "once"
           ? " They can do it <strong>only once per game</strong>, on the night they prefer; on the other nights they are called anyway." : ""}</li>
         <li><strong>The magician</strong> points at the house to protect (${r.magicianSelf ? "their own too" : "not their own"}).${r.magicianRepeat
@@ -479,6 +520,7 @@ const GUIDE = {
         <li>${r.mediumAwayDies
           ? "If the wolves attack the medium's house while they are out visiting, <strong>the medium dies anyway</strong>."
           : "If the wolves attack the medium's house while they are out visiting, <strong>the medium survives</strong>: they aren't home."}</li>
+        <li>If the wolves attack <strong>the Cursed</strong>, they don't die: <strong>they become a wolf</strong> and from then on play with the pack.</li>
         <li>Otherwise the wolves' victim dies.</li>
       </ul>
       <p>The master only announces who died, not why.${r.reveal === "all" ? " The victim's role is revealed to everyone." : ""}</p>

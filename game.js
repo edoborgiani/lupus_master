@@ -5,9 +5,11 @@ export const ROLES = {
   seer: { icon: "👁️", team: "village", max: 1 },
   magician: { icon: "🪄", team: "village", max: 1 },
   medium: { icon: "🔮", team: "village", max: 1 },
+  mason: { icon: "🤝", team: "village", group: 2 },  // none, or at least two: they know each other
+  prole: { icon: "🌗", team: "village", max: 1 },    // becomes a wolf if the wolves kill them
   citizen: { icon: "🧑‍🌾", team: "village" },
 };
-export const SPECIAL_ROLES = ["wolf", "seer", "magician", "medium"]; // citizens fill the remaining slots
+export const SPECIAL_ROLES = ["wolf", "seer", "magician", "medium", "mason", "prole"]; // citizens fill the remaining slots
 export const ROLE_ORDER = [...SPECIAL_ROLES, "citizen"];
 export const NIGHT_ROLES = ["seer", "magician", "medium"]; // roles that pick a player at night (besides the wolves)
 
@@ -23,6 +25,9 @@ export const DEFAULT_RULES = {
   secondTie: "none",        // tie in the run-off: "none" eliminated, or "random" among the tied
   selfVote: false,          // players may vote for themselves
   reveal: "none",           // roles revealed when leaving the game: "none", "voted" (only by vote), "all"
+  masonsWake: "first",      // live: the master calls the masons on the "first" night only, or "every" night
+  proleKnows: true,         // the prole knows their role (false: they believe they are a citizen until bitten)
+  seerSeesProle: "village", // before the bite the seer sees the prole as "village" (not a wolf) or "wolf"
 };
 export const RULE_OPTIONS = {
   wolvesWin: ["parity", "majority"],
@@ -30,6 +35,8 @@ export const RULE_OPTIONS = {
   seerUses: ["every", "once"],
   secondTie: ["none", "random"],
   reveal: ["none", "voted", "all"],
+  masonsWake: ["first", "every"],
+  seerSeesProle: ["village", "wolf"],
 };
 export const withDefaults = (rules) => ({ ...DEFAULT_RULES, ...(rules || {}) });
 
@@ -40,7 +47,9 @@ export function suggestedCounts(n) {
   const seer = 1;
   const magician = 1;
   const medium = n >= 6 ? 1 : 0;
-  return { wolf, seer, magician, medium, citizen: n - wolf - seer - magician - medium };
+  const mason = n >= 10 ? 2 : 0;
+  const prole = n >= 12 ? 1 : 0;
+  return { wolf, seer, magician, medium, mason, prole, citizen: n - wolf - seer - magician - medium - mason - prole };
 }
 
 export const maxWolves = (n) => Math.ceil(n / 2) - 1; // wolves must start as a minority
@@ -49,6 +58,7 @@ export const maxWolves = (n) => Math.ceil(n / 2) - 1; // wolves must start as a 
 export function setupError(counts, n) {
   if (counts.wolf < 1) return "noWolf";
   if (counts.wolf > maxWolves(n)) return "tooManyWolves";
+  if (counts.mason === 1) return "oneMason";
   if (counts.citizen < 0) return "tooManyRoles";
   return "";
 }
@@ -107,10 +117,16 @@ export function nightStatus(roles, alive, wolfVotes = {}, actions = {}, { rules,
   return { wolves, wolvesDone, ...holders, seerSpent, complete };
 }
 
+/** The prole may be dealt openly (role "prole") or hidden as a citizen (listed in `cursed`, which only the controller sees). */
+export const isProle = (roles, id, cursed = {}) => roles[id] === "prole" || !!cursed?.[id];
+export const trueRole = (roles, id, cursed = {}) => (cursed?.[id] ? "prole" : roles[id]);
+
 /** What the seer learns about `target`. */
-export function seerVision(roles, target, rules) {
-  const vision = { target, wolf: roles[target] === "wolf" };
-  if (withDefaults(rules).seerSees === "role") vision.role = roles[target];
+export function seerVision(roles, target, rules, cursed = {}) {
+  const r = withDefaults(rules);
+  const prole = isProle(roles, target, cursed);
+  const vision = { target, wolf: roles[target] === "wolf" || (prole && r.seerSeesProle === "wolf") };
+  if (r.seerSees === "role") vision.role = trueRole(roles, target, cursed);
   return vision;
 }
 
@@ -120,7 +136,7 @@ export function seerVision(roles, target, rules) {
  * - If the wolves attack the house the medium is visiting, the medium dies instead.
  * - If the wolves attack the medium's own house while the medium is away, the rules decide.
  */
-export function resolveNight(roles, alive, wolfVotes = {}, actions = {}, { rules, round = 1, lastProtected = null } = {}) {
+export function resolveNight(roles, alive, wolfVotes = {}, actions = {}, { rules, round = 1, lastProtected = null, cursed = {} } = {}) {
   const r = withDefaults(rules);
   const target = wolvesAct(r, round) ? wolfTarget(roles, alive, wolfVotes).target : null;
   const [magician] = livingWithRole(roles, alive, "magician");
@@ -136,8 +152,9 @@ export function resolveNight(roles, alive, wolfVotes = {}, actions = {}, { rules
   else if (target && target === protectedId) reason = "protected";
   else if (target && target === visitedId) { victim = medium; reason = "medium"; }
   else if (target && target === medium && visitedId && !r.mediumAwayDies) reason = "medium-away";
+  else if (target && isProle(roles, target, cursed)) reason = "converted"; // the bite turns the prole into a wolf
   else if (target) { victim = target; reason = "killed"; }
-  return { attacked: target, protected: protectedId, visited: visitedId, victim, reason };
+  return { attacked: target, protected: protectedId, visited: visitedId, victim, reason, converted: reason === "converted" ? target : null };
 }
 
 // ---------- day ----------
@@ -191,6 +208,7 @@ export function winner(roles, alive, rules) {
 // ---------- live mode ----------
 
 /** Steps the master walks through each night in live mode. Roles in the game are always called, even when dead. */
-export function nightSteps(counts = {}) {
-  return ["sleep", "wolves", ...NIGHT_ROLES.filter((r) => counts[r]), "dawn"];
+export function nightSteps(counts = {}, round = 1, rules) {
+  const masons = counts.mason && (round === 1 || withDefaults(rules).masonsWake === "every");
+  return ["sleep", "wolves", ...(masons ? ["masons"] : []), ...NIGHT_ROLES.filter((r) => counts[r]), "dawn"];
 }

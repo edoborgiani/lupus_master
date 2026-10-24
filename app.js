@@ -36,7 +36,7 @@ import { firebaseConfig } from "./firebase-config.js";
 import {
   ROLES, ROLE_ORDER, NIGHT_ROLES, DEFAULT_RULES, RULE_OPTIONS, withDefaults, suggestedCounts, maxWolves, setupError,
   dealRoles, aliveIds, livingWithRole, wolfTarget, wolvesAct, protectable, nightStatus, seerVision, resolveNight,
-  tallyVotes, closeVote, revealsRole, winner, nightSteps, SKIP, seerCanLook, seerUsedBefore,
+  tallyVotes, closeVote, revealsRole, winner, nightSteps, SKIP, seerCanLook, seerUsedBefore, SPECIAL_ROLES, isProle, trueRole,
 } from "./game.js";
 import { LANGS, t, getLang, setLang, roleName, roleDesc, roleInfo, guideHtml, translatePage } from "./i18n.js";
 
@@ -51,6 +51,8 @@ const RULE_GROUPS = [
   ["seer", ["seerSees", "seerUses"]],
   ["magician", ["magicianSelf", "magicianRepeat"]],
   ["medium", ["mediumAwayDies"]],
+  ["mason", ["masonsWake"]],
+  ["prole", ["proleKnows", "seerSeesProle"]],
   ["vote", ["secondTie", "selfVote", "reveal"]],
 ];
 
@@ -98,6 +100,8 @@ let wolfVotes = {};       // wolves only: tonight's picks of the pack
 let myAction = null;      // seer/magician/medium: tonight's choice
 let visions = {};         // seer only: { round: { target, wolf, role? } }
 let memo = {};            // magician only: { lastProtected }
+let masons = null;        // masons only: the uids of all masons
+let bittenRound = null;   // the night this player was turned into a wolf (prole), if any
 let secrets = null;       // controller only: everything under secrets/{CODE}
 let setup = null;         // controller only: role counts being chosen
 let revealed = false;
@@ -359,7 +363,7 @@ function renderStart(n, master) {
 }
 
 function renderSetup(n, modeLabel) {
-  const specials = (s) => s.wolf + s.seer + s.magician + s.medium;
+  const specials = (s) => SPECIAL_ROLES.reduce((sum, r) => sum + (s[r] || 0), 0);
   if (!setup || setup.n !== n) {
     // keep the controller's choice if it still fits the new player count, otherwise start from the suggestion
     const keep = setup && n - specials(setup) >= 0;
@@ -374,7 +378,7 @@ function renderSetup(n, modeLabel) {
 
   $("#role-counters").replaceChildren(...ROLE_ORDER.map((r) => {
     const role = ROLES[r];
-    const hint = r === "citizen" ? t("fillRest") : t("max", role.max === 1 ? 1 : maxWolves(n));
+    const hint = r === "citizen" ? t("fillRest") : role.group ? t("zeroOrTwo") : t("max", role.max === 1 ? 1 : maxWolves(n));
     const out = el("output", {}, String(setup[r]));
     let stepper;
     if (r === "citizen") {
@@ -384,7 +388,8 @@ function renderSetup(n, modeLabel) {
       stepper = el("span", { class: "stepper" },
         stepButton("−", t("fewer", roleName(r, 2)), setup[r] <= (role.min ?? 0), () => changeCount(r, -1)),
         out,
-        stepButton("+", t("more", roleName(r, 2)), setup[r] >= max || setup.citizen <= 0, () => changeCount(r, +1)));
+        stepButton("+", t("more", roleName(r, 2)), setup[r] >= max || setup.citizen < (role.group && !setup[r] ? role.group : 1),
+          () => changeCount(r, +1)));
     }
     return el("li", { class: "role-row" },
       el("span", { class: "role-icon" }, role.icon),
@@ -402,6 +407,9 @@ function stepButton(label, aria, disabled, onclick) {
 }
 
 function changeCount(role, delta) {
+  // roles that come in groups (masons) jump straight between 0 and the group size
+  const group = ROLES[role].group;
+  if (group && ((delta > 0 && !setup[role]) || (delta < 0 && setup[role] === group))) delta *= group;
   setup[role] += delta;
   setup.citizen -= delta;
   renderGame();
@@ -421,7 +429,9 @@ function renderMyRole() {
   let extra = "";
   if (myRole === "wolf" && pack) {
     const others = pack.filter((id) => id !== uid);
-    extra = others.length ? t("yourPack", listNames(others)) : t("onlyWolf");
+    extra = (bittenRound ? `${t("bitten")} ` : "") + (others.length ? t("yourPack", listNames(others)) : t("onlyWolf"));
+  } else if (myRole === "mason" && masons) {
+    extra = t("yourMasons", listNames(masons.filter((id) => id !== uid)));
   } else if (myRole === "seer") {
     const seen = Object.entries(visions).filter(([, v]) => v).sort(([a], [b]) => a - b);
     extra = seen.length ? t("yourVisions", seen.map(([r, v]) => `${t("nightN", r)}: ${visionText(v)}`).join(" · ")) : "";
@@ -437,7 +447,8 @@ function renderMasterRoles() {
     (isDead(a) - isDead(b)) || (ROLE_ORDER.indexOf(ra) - ROLE_ORDER.indexOf(rb)) || playerName(a).localeCompare(playerName(b)));
   $("#master-role-list").replaceChildren(...entries.map(([id, r]) => {
     const li = playerRow(id, playerName(id));
-    li.append(roleBadge(r));
+    li.append(roleBadge(trueRole(secrets.roles, id, secrets.cursed)));
+    if (secrets.converted?.[id]) li.lastChild.textContent += t("exProle");
     return li;
   }));
 }
@@ -448,11 +459,11 @@ const inGame = () => aliveIds(alive());
 const seenCount = () => inGame().filter(hasSeen).length;
 const everyoneSeen = () => seenCount() === inGame().length;
 
-function seenStatus() {
+function seenStatus(legend = true) {
   const n = inGame().length;
   return [
     text(everyoneSeen() ? t("seenAll") : t("seenCount", seenCount(), n), "seen-note"),
-    text(t("seenLegend"), "muted small"),
+    legend && text(t("seenLegend"), "muted small"),
   ];
 }
 
@@ -465,7 +476,7 @@ function masterAssigned() {
   const live = game().mode === "live";
   phaseCard("", t("rolesDealt"),
     text(live ? t("masterAssignedLive") : t("masterAssignedRemote")),
-    seenStatus(),
+    seenStatus(false),
     startFirstNight());
 }
 
@@ -488,7 +499,7 @@ function hostTools(...buttons) {
 function liveNight() {
   const g = game();
   const roles = secrets.roles || {};
-  const steps = nightSteps(g.counts);
+  const steps = nightSteps(g.counts, g.round, rules());
   const step = steps.includes(g.step) ? g.step : "sleep";
   const idx = steps.indexOf(step);
   const go = (updates = {}) => update(ref(db), { ...updates, [gamePath("step")]: steps[idx + 1] });
@@ -522,6 +533,13 @@ function liveNight() {
       back);
   }
 
+  if (step === "masons") {
+    const living = livingWithRole(roles, alive(), "mason");
+    return phaseCard("night", title, progress, say(t("sayMasons")),
+      text(living.length ? t("masonsAre", listNames(living)) : t("masonsOut")),
+      action(t("continue"), run(() => go())), text(t("thenMasons"), "muted small"), back);
+  }
+
   if (NIGHT_ROLES.includes(step)) {
     const role = ROLES[step];
     const [holder] = livingWithRole(roles, alive(), step);
@@ -540,14 +558,14 @@ function liveNight() {
     const updates = () => {
       const u = { [`secrets/${code}/actions/${holder}`]: liveSel };
       if (step === "seer") {
-        u[`secrets/${code}/visions/${holder}/${g.round}`] = seerVision(roles, liveSel, rules());
+        u[`secrets/${code}/visions/${holder}/${g.round}`] = seerVision(roles, liveSel, rules(), secrets.cursed);
         u[`secrets/${code}/memo/${holder}/used`] = true;
       }
       return u;
     };
     let answer = null;
     if (step === "seer" && liveSel) {
-      const v = seerVision(roles, liveSel, rules());
+      const v = seerVision(roles, liveSel, rules(), secrets.cursed);
       answer = [
         el("p", { class: "vision" + (v.wolf ? " wolf" : "") }, v.role ? t("seerRole", roleLabel(v.role)) : v.wolf ? t("seerYes") : t("seerNo")),
         text(v.role ? t("seerSignalRole") : t("seerSignal"), "muted small"),
@@ -570,6 +588,7 @@ function liveNight() {
     say(t("sayDawn")),
     el("p", { class: "big-news" }, res.victim ? t("victimBig", playerName(res.victim)) : t("nobodyBig")),
     res.reason !== "killed" && text(t("onlyForYou", describeNight(res)), "secret-note"),
+    res.converted && text(t("convertedNote", playerName(res.converted)), "secret-note"),
     action(t("announceDay"), run(resolveNightNow)),
     back);
 }
@@ -655,7 +674,7 @@ function masterNight() {
     else if (r === "seer" && st.seerSpent) content = t("seerSpentLine", playerName(holder));
     else if (acts[holder] === SKIP) content = t("seerSkipsLine", playerName(holder));
     else if (!acts[holder]) content = t("waitingFor", playerName(holder), name);
-    else if (r === "seer") content = t("seerLooked", playerName(holder), playerName(acts[holder]), visionText(seerVision(roles, acts[holder], rules())));
+    else if (r === "seer") content = t("seerLooked", playerName(holder), playerName(acts[holder]), visionText(seerVision(roles, acts[holder], rules(), secrets.cursed)));
     else content = t("actionLine", playerName(holder), t(`verb_${r}`), playerName(acts[holder]));
     lines.push(line(ROLES[r].icon, !holder || !!acts[holder] || (r === "seer" && st.seerSpent), content));
   }
@@ -738,8 +757,12 @@ function nightNews() {
   const g = game();
   const night = logEntries().find((e) => e.type === "night" && e.round === g.round);
   const shown = night?.victim && g.revealed?.[night.victim];
-  return el("p", { class: "news" + (night?.victim ? " death" : "") },
-    night?.victim ? t("newsVictim", playerName(night.victim)) + (shown ? t("wasRole", roleLabel(shown)) : "") : t("newsNobody"));
+  return [
+    el("p", { class: "news" + (night?.victim ? " death" : "") },
+      night?.victim ? t("newsVictim", playerName(night.victim)) + (shown ? t("wasRole", roleLabel(shown)) : "") : t("newsNobody")),
+    // only on the bitten prole's own phone
+    bittenRound === g.round && el("p", { class: "news death" }, t("bitten")),
+  ];
 }
 
 function dayResult(title, news, vote) {
@@ -811,6 +834,7 @@ function renderOver() {
     el("ul", { class: "plain-list" }, ids.map((id) => {
       const li = playerRow(id, playerName(id));
       li.append(roleBadge(reveal[id]));
+      if (g.converted?.[id]) li.lastChild.textContent += t("exProle");
       return li;
     })),
     isMaster() ? back : isHostOnly() ? hostTools(back) : text(t("waitNewGame"), "muted small"));
@@ -930,7 +954,7 @@ function answerSeer() {
   if (visionKey === key) return;
   visionKey = key;
   update(ref(db), {
-    [`secrets/${code}/visions/${seer}/${g.round}`]: seerVision(roles, target, rules()),
+    [`secrets/${code}/visions/${seer}/${g.round}`]: seerVision(roles, target, rules(), secrets.cursed),
     [`secrets/${code}/memo/${seer}/used`]: true,
   }).catch(() => { visionKey = null; });
 }
@@ -993,6 +1017,8 @@ function syncSecrets() {
     myAction = null;
     visions = {};
     memo = {};
+    masons = null;
+    bittenRound = null;
     secrets = null;
     revealed = false;
     visionKey = null;
@@ -1012,6 +1038,11 @@ function syncSecrets() {
       subscribe("action", `secrets/${code}/actions/${uid}`, (v) => { myAction = v; renderGame(); });
       if (myRole === "seer") subscribe("visions", `secrets/${code}/visions/${uid}`, (v) => { visions = v || {}; renderGame(); });
       if (myRole === "magician") subscribe("memo", `secrets/${code}/memo/${uid}`, (v) => { memo = v || {}; renderGame(); });
+    } else if (myRole === "mason") {
+      subscribe("masons", `secrets/${code}/masons`, (m) => { masons = Object.keys(m || {}); renderGame(); });
+    }
+    if (myRole !== "wolf" || bittenRound) {
+      subscribe("converted", `secrets/${code}/converted/${uid}`, (r) => { bittenRound = r || null; renderGame(); });
     }
     renderGame();
   });
@@ -1176,10 +1207,18 @@ async function assignRoles() {
   if (ids.length < MIN_PLAYERS) throw new Error(t("notEnough"));
 
   const roles = dealRoles(ids, counts, randomInt);
-  const wolves = Object.fromEntries(ids.filter((id) => roles[id] === "wolf").map((id) => [id, true]));
+  const pick = (role) => Object.fromEntries(ids.filter((id) => roles[id] === role).map((id) => [id, true]));
+  const wolves = pick("wolf");
+  const masonSet = pick("mason");
+  let cursed = null;
+  if (!rules().proleKnows) {
+    // the prole believes they are a citizen: only the controller knows who they really are
+    cursed = pick("prole");
+    for (const id of Object.keys(cursed)) roles[id] = "citizen";
+  }
   // one atomic write: players never see the "assigned" phase before their role exists
   await update(ref(db), {
-    [`secrets/${code}`]: { roles, wolves },
+    [`secrets/${code}`]: compact({ roles, wolves, masons: Object.keys(masonSet).length ? masonSet : null, cursed }),
     [`lobbies/${code}/votes`]: null,
     [`lobbies/${code}/seen`]: null,
     [`lobbies/${code}/game`]: {
@@ -1214,24 +1253,24 @@ const lastProtected = (round) => secrets?.nightLog?.[round - 1]?.protected || nu
 
 function resolveNightFromSecrets(round) {
   return resolveNight(secrets.roles || {}, alive(), secrets.wolfVotes || {}, secrets.actions || {},
-    { rules: rules(), round, lastProtected: lastProtected(round) });
+    { rules: rules(), round, lastProtected: lastProtected(round), cursed: secrets.cursed || {} });
 }
 
 /** Writes shared by night and vote results: log entry, death, revealed role and the end of the game if someone won. */
-function outcome(updates, entry, victim, how) {
-  const roles = secrets.roles || {};
+function outcome(updates, entry, victim, how, roles = secrets.roles || {}) {
   updates[gamePath(`log/${logEntries().length}`)] = compact(entry);
   const aliveAfter = { ...alive() };
   if (victim) {
     aliveAfter[victim] = false;
     updates[gamePath(`alive/${victim}`)] = false;
-    if (revealsRole(rules(), how)) updates[gamePath(`revealed/${victim}`)] = roles[victim];
+    if (revealsRole(rules(), how)) updates[gamePath(`revealed/${victim}`)] = trueRole(roles, victim, secrets.cursed);
   }
   const won = winner(roles, aliveAfter, rules());
   if (won) {
     updates[gamePath("phase")] = "over";
     updates[gamePath("winner")] = won;
-    updates[gamePath("reveal")] = roles;
+    updates[gamePath("reveal")] = Object.fromEntries(Object.keys(roles).map((id) => [id, trueRole(roles, id, secrets.cursed)]));
+    if (secrets.converted) updates[gamePath("converted")] = secrets.converted;
     updates[gamePath("vote")] = null;
   }
   return won;
@@ -1247,10 +1286,21 @@ function resolveNightNow() {
   const [magician] = livingWithRole(roles, alive(), "magician");
   const seen = seer && acts[seer] !== SKIP ? acts[seer] : null;
   const updates = {
-    [`secrets/${code}/nightLog/${g.round}`]: compact({ ...res, seen, seenWolf: seen ? roles[seen] === "wolf" : null }),
+    [`secrets/${code}/nightLog/${g.round}`]: compact({ ...res, seen, seenWolf: seen ? seerVision(roles, seen, rules(), secrets.cursed).wolf : null }),
   };
   if (magician) updates[`secrets/${code}/memo/${magician}`] = compact({ lastProtected: res.protected });
-  const won = outcome(updates, { type: "night", round: g.round, victim: res.victim }, res.victim, "night");
+  let rolesAfter = roles;
+  if (res.converted) {
+    // the bitten prole joins the pack from now on
+    const id = res.converted;
+    rolesAfter = { ...roles, [id]: "wolf" };
+    updates[`secrets/${code}/roles/${id}`] = "wolf";
+    updates[`secrets/${code}/wolves/${id}`] = true;
+    updates[`secrets/${code}/converted/${id}`] = g.round;
+    updates[`secrets/${code}/cursed/${id}`] = null;
+  }
+  const won = outcome(updates, { type: "night", round: g.round, victim: res.victim }, res.victim, "night", rolesAfter);
+  if (won && res.converted) updates[gamePath("converted")] = { ...(secrets.converted || {}), [res.converted]: g.round };
   if (!won) {
     updates[gamePath("phase")] = "day";
     updates[gamePath("vote")] = { ballot: 1 };

@@ -95,13 +95,30 @@
         "roles": {
           "$uid": {
             ".read": "auth != null && auth.uid === $uid",
-            ".validate": "newData.isString() && newData.val().matches(/^(citizen|wolf|seer|magician|medium)$/)"
+            ".validate": "newData.isString() && newData.val().matches(/^(citizen|wolf|seer|magician|medium|mason|prole)$/)"
           }
         },
         "wolves": {
           ".read": "auth != null && root.child('secrets').child($code).child('roles').child(auth.uid).val() === 'wolf'",
           "$uid": {
             ".validate": "newData.val() === true"
+          }
+        },
+        "masons": {
+          ".read": "auth != null && root.child('secrets').child($code).child('roles').child(auth.uid).val() === 'mason'",
+          "$uid": {
+            ".validate": "newData.val() === true"
+          }
+        },
+        "cursed": {
+          "$uid": {
+            ".validate": "newData.val() === true"
+          }
+        },
+        "converted": {
+          "$uid": {
+            ".read": "auth != null && auth.uid === $uid",
+            ".validate": "newData.isNumber()"
           }
         },
         "wolfVotes": {
