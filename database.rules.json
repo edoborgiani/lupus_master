@@ -110,11 +110,6 @@
             ".validate": "newData.val() === true"
           }
         },
-        "cursed": {
-          "$uid": {
-            ".validate": "newData.val() === true"
-          }
-        },
         "converted": {
           "$uid": {
             ".read": "auth != null && auth.uid === $uid",
