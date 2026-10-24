@@ -15,8 +15,10 @@ and says whether they're the game master (only one master per lobby).
 
 Roles: Citizens, Wolves, Seer (learns each night whether a player is a wolf), Magician
 (protects a house each night, not their own) and Medium (visits a house each night and dies
-in place of the wolves' victim). The interface is in Italian and has a "📖 Regole" guide
-explaining roles and rules. Most votes is
+in place of the wolves' victim). The interface is in Italian or English (⚙️ settings, per
+phone) and has a "📖 Regole" guide explaining roles and rules. Whoever runs the game can pick
+house rules in the settings (e.g. whether the medium dies when the wolves attack their house
+while they're away, whether the magician can protect themselves, run-off ties, revealed roles). Most votes is
 eliminated; a tie goes to a run-off; the wolves win when they are as many as the others.
 
 It's a static site (GitHub Pages) backed by **Firebase Realtime Database**, so there is no
@@ -57,6 +59,7 @@ Then open http://localhost:8000. Use a private window to simulate a second playe
 ## Files
 
 - `index.html`, `style.css`, `app.js` – the app (plain HTML/CSS/JS, no build step).
+- `i18n.js` – Italian and English texts.
 - `game.js` – the game rules (night resolution, votes, win conditions), no Firebase or DOM.
 - `firebase-config.js` – your Firebase project config.
 - `database.rules.json` – security rules to paste into the Firebase console.

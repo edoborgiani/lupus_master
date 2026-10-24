@@ -1,0 +1,363 @@
+// Interface texts in Italian and English. Each phone picks its own language (stored locally).
+// Values are strings or functions of the parameters.
+
+import { withDefaults } from "./game.js";
+
+export const LANGS = ["it", "en"];
+
+const ROLE_NAMES = {
+  it: {
+    wolf: ["Lupo", "Lupi"], seer: ["Veggente", "Veggenti"], magician: ["Mago", "Maghi"],
+    medium: ["Medium", "Medium"], citizen: ["Cittadino", "Cittadini"],
+  },
+  en: {
+    wolf: ["Wolf", "Wolves"], seer: ["Seer", "Seers"], magician: ["Magician", "Magicians"],
+    medium: ["Medium", "Mediums"], citizen: ["Citizen", "Citizens"],
+  },
+};
+
+/** Role description for the player's card, following the room's rules. */
+const ROLE_DESC = {
+  it: {
+    wolf: (r) => `Ogni notte i lupi scelgono insieme un giocatore da uccidere${r.firstNightKill ? "" : " (la prima notte vi riconoscete soltanto)"}. `
+      + `Vincete quando i lupi sono ${r.wolvesWin === "majority" ? "più" : "tanti quanti"} degli altri.`,
+    seer: (r) => `Ogni notte indichi un giocatore e scopri ${r.seerSees === "role" ? "il suo ruolo esatto" : "se è un lupo oppure no"}.`,
+    magician: (r) => `Ogni notte proteggi la casa di un giocatore${r.magicianSelf ? " (anche la tua)" : " (non la tua)"}: nessuno al suo interno può essere ucciso quella notte.`
+      + (r.magicianRepeat ? "" : " Non puoi proteggere la stessa casa due notti di fila."),
+    medium: (r) => "Ogni notte vai a casa di un altro giocatore. Se i lupi attaccano quella casa, muori tu al suo posto. "
+      + (r.mediumAwayDies ? "Se attaccano casa tua mentre sei fuori, muori comunque." : "Se attaccano casa tua mentre sei fuori, ti salvi."),
+    citizen: () => "Sei un semplice abitante del villaggio. Di giorno discuti e vota per scoprire ed eliminare i lupi.",
+  },
+  en: {
+    wolf: (r) => `Each night the wolves agree on a player to kill${r.firstNightKill ? "" : " (on the first night you only recognise each other)"}. `
+      + `You win when the wolves are ${r.wolvesWin === "majority" ? "more than" : "as many as"} the others.`,
+    seer: (r) => `Each night you point at a player and learn ${r.seerSees === "role" ? "their exact role" : "whether they are a wolf"}.`,
+    magician: (r) => `Each night you protect a player's house${r.magicianSelf ? " (yours too)" : " (not your own)"}: nobody in it can be killed that night.`
+      + (r.magicianRepeat ? "" : " You can't protect the same house two nights in a row."),
+    medium: (r) => "Each night you visit another player's house. If the wolves attack it, you die in their place. "
+      + (r.mediumAwayDies ? "If they attack your own house while you are away, you die anyway." : "If they attack your own house while you are away, you survive."),
+    citizen: () => "You are an ordinary villager. During the day, discuss and vote to find and eliminate the wolves.",
+  },
+};
+
+/** Longer notes for the rules guide. */
+const ROLE_INFO = {
+  it: {
+    wolf: "Di notte i lupi si riconoscono e si accordano su una vittima: devono essere tutti d'accordo. Di giorno fingono di essere innocenti.",
+    seer: "Una sola visione per notte, e non si può cambiare. Usa ciò che scopri per guidare il villaggio, ma se i lupi capiscono chi sei, sarai il loro prossimo bersaglio.",
+    magician: "La protezione vale per tutta la casa: se il medium è in visita lì, è salvo anche lui.",
+    medium: "Non puoi visitare te stesso. Se il mago protegge la casa che visiti, vi salvate entrambi.",
+    citizen: "Non hai poteri notturni, ma il tuo voto conta: osserva, ascolta e smaschera i lupi.",
+  },
+  en: {
+    wolf: "At night the wolves recognise each other and agree on a victim: they must all agree. During the day they pretend to be innocent.",
+    seer: "One vision per night, and it can't be changed. Use what you learn to guide the village, but if the wolves figure out who you are, you'll be next.",
+    magician: "The protection covers the whole house: if the medium is visiting, they are safe too.",
+    medium: "You can't visit yourself. If the magician protects the house you visit, you are both safe.",
+    citizen: "You have no night powers, but your vote counts: watch, listen and unmask the wolves.",
+  },
+};
+
+const STRINGS = {
+  it: {
+    // static page
+    info: "📖 Regole", settings: "Impostazioni", subtitle: "Il compagno di gioco", connecting: "Connessione…",
+    setupTitle: "Configurazione necessaria", setupText: "Compila firebase-config.js con la configurazione del tuo progetto Firebase. Vedi il README.",
+    create: "Crea una nuova stanza", orJoin: "oppure entra in una", roomCode: "Codice della stanza", join: "Entra",
+    room: "Stanza", yourName: "Il tuo nome", namePlaceholder: "es. Marta", iAmMaster: "Sono il master",
+    shareCode: "Condividi questo codice con gli altri giocatori", copyCode: "Copia il codice", shareLink: "Condividi il link di invito",
+    start: "Inizia la partita", prepare: "Prepara la partita", assign: "Distribuisci i ruoli", useSuggested: "Usa i suggeriti",
+    cancel: "Annulla", tapToSee: "Tocca per vedere il tuo ruolo", nobodyLooking: "Assicurati che nessuno stia guardando",
+    tapToHide: "Tocca di nuovo per nasconderlo", rolesTitle: "Ruoli", endGame: "Termina la partita", history: "Cronologia",
+    playersTitle: "Giocatori", editProfile: "Modifica nome / ruolo", leave: "Esci dalla stanza", reconnecting: "Riconnessione…",
+    modeTitle: "Modalità di gioco", modeLive: "🗣️ Dal vivo", modeRemote: "📱 A distanza",
+    modeLiveDesc: "Tutti allo stesso tavolo. I telefoni mostrano solo i ruoli; il master registra la notte e la votazione.",
+    modeRemoteDesc: "Ognuno gioca dal proprio telefono: azioni notturne e voti avvengono nell'app.",
+    liveNeedsMaster: "Le partite dal vivo hanno bisogno di un master.",
+    settingsTitle: "⚙️ Impostazioni", language: "Lingua", roomRules: "Regole della stanza", close: "Chiudi",
+    rulesEditable: "Valgono per tutti nella stanza. Puoi cambiarle finché la partita non inizia.",
+    rulesReadOnly: (who) => `Le sceglie ${who}. Qui puoi vedere quelle in uso.`,
+    rulesLocked: "Partita in corso: le regole non si possono cambiare fino alla fine.",
+    noRoom: "Entra in una stanza per vedere le sue regole.",
+    // lobby
+    masterHint: "Il master racconta la partita e non ha un ruolo. Facoltativo nelle partite a distanza.",
+    masterTaken: (n) => `${n} è già il master.`,
+    save: "Salva", enterRoom: "Entra nella stanza", back: "Indietro",
+    gameInProgress: "In questa stanza c'è già una partita in corso.",
+    playersCount: (n) => (n === 1 ? "1 giocatore" : `${n} giocatori`), plusMaster: " + master",
+    noMasterHost: (h) => `Nessun master: potete comunque giocare a distanza, con ${h} come host.`,
+    noMasterYet: "Ancora nessun master.",
+    you: "tu", out: "💀 fuori gioco", host: "Host", master: "Master", left: "(uscito)", online: "Online", offline: "Offline",
+    waitingPlayers: (n, min) => `In attesa di giocatori: ${n} su almeno ${min}.`, playersReady: (n) => `${n} giocatori pronti.`,
+    noMasterRemote: " Senza master si gioca a distanza, e giochi anche tu.",
+    waitStart: (who) => `In attesa che ${who} inizi la partita…`, theMaster: "il master", hostOf: (n) => `${n} (host)`,
+    waitMaster: "In attesa di un master…", chosenMode: (m) => `Modalità scelta: ${m}`,
+    masterChoosing: "Il master sta scegliendo i ruoli…", hostChoosing: (n) => `${n} sta scegliendo i ruoli…`,
+    loadingRole: "Caricamento del tuo ruolo…", notInGame: "C'è una partita in corso senza di te. Aspetta la prossima!",
+    // setup
+    nPlayers: (n) => `${n} giocatori`, suggested: (n, c) => `Suggeriti per ${n} giocatori: ${c}.`,
+    fillRest: "Riempiono i posti rimasti", max: (n) => `Max ${n}`, fewer: (r) => `Meno ${r}`, more: (r) => `Più ${r}`,
+    err_noWolf: "Serve almeno un lupo.", err_tooManyWolves: (m, n) => `I lupi devono partire in minoranza: al massimo ${m} con ${n} giocatori.`,
+    err_tooManyRoles: "Ci sono più ruoli che giocatori.", notEnough: "Non ci sono abbastanza giocatori.",
+    // roles card
+    outSuffix: " (fuori gioco)", yourPack: (n) => `Il tuo branco: ${n}`, onlyWolf: "Sei l'unico lupo.",
+    yourVisions: (v) => `Le tue visioni: ${v}`, nightN: (r) => `notte ${r}`, inThisGame: (c) => `In questa partita: ${c}`,
+    isWolf: (n) => `${n} è un lupo! 🐺`, notWolf: (n) => `${n} non è un lupo.`, isRole: (n, r) => `${n} è: ${r}`,
+    // assigned
+    rolesDealt: "Ruoli distribuiti",
+    masterAssignedLive: "Chiedi a tutti di guardare il proprio ruolo di nascosto e poi di mettere via il telefono. La notte la guidi tu da qui.",
+    masterAssignedRemote: "Chiedi a tutti di guardare il proprio ruolo di nascosto. Quando tutti l'hanno visto, inizia la prima notte.",
+    playerAssignedLive: "Guarda il tuo ruolo qui sotto senza farlo vedere a nessuno, poi metti via il telefono: il master guida la partita a voce.",
+    playerAssignedRemote: "Guarda il tuo ruolo qui sotto senza farlo vedere a nessuno. La prima notte sta per iniziare.",
+    seenCount: (k, n) => `${k} su ${n} hanno visto il proprio ruolo.`, seenAll: "Tutti hanno visto il proprio ruolo. 🟢",
+    seenLegend: "🟢 ha visto il ruolo · 🟡 non ancora", seenYes: "Ha visto il ruolo", seenNo: "Non ha ancora visto il ruolo",
+    startNight: (r) => `🌙 Inizia la notte ${r}`, waitSeen: "Aspetta che tutti abbiano visto il proprio ruolo",
+    youAreHost: "Sei l'host di questa partita.",
+    // night
+    night: (r) => `🌙 Notte ${r}`, step_sleep: "Sonno", step_wolves: "🐺 Lupi", step_seer: "👁️ Veggente",
+    step_magician: "🪄 Mago", step_medium: "🔮 Medium", step_dawn: "🌅 Alba",
+    saySleep: "Scende la notte sul villaggio. Tutti chiudono gli occhi.", callWolves: "Avanti: chiama i lupi",
+    sayWolves: "Lupi, aprite gli occhi… e scegliete la vostra vittima.", sayWolvesFirst: "Lupi, aprite gli occhi e riconoscetevi.",
+    wolvesAre: (n, names) => `🐺 ${n === 1 ? "Il lupo è" : "I lupi sono"} ${names}. Tocca il giocatore che indicano:`,
+    wolvesFirstNight: (names) => `🐺 I lupi (${names}) si guardano e si riconoscono. La prima notte non uccidono.`,
+    confirmAttack: (n) => `Conferma: i lupi attaccano ${n}`, chooseVictim: "Scegli la vittima", continue: "Continua",
+    thenWolves: "Poi: “Lupi, chiudete gli occhi.”",
+    say_seer: "Veggente, apri gli occhi… chi vuoi scoprire stanotte?",
+    say_magician: "Mago, apri gli occhi… quale casa proteggi stanotte?",
+    say_medium: "Medium, apri gli occhi… a casa di chi vai stanotte?",
+    roleIsOut: (icon, r) => `${icon} Il ${r} è fuori gioco. Chiamalo comunque, così nessuno se ne accorge, aspetta qualche secondo e continua.`,
+    holderIs: (icon, n, r) => `${icon} ${n} è il ${r}. Tocca il giocatore che indica:`,
+    seerYes: "👍 Sì, è un lupo", seerNo: "👎 No, non è un lupo", seerRole: (r) => `Ruolo: ${r}`,
+    seerSignal: "Fai un cenno al veggente: pollice in su se è un lupo, in giù se non lo è.",
+    seerSignalRole: "Mostra al veggente il ruolo in silenzio (ad esempio indicandolo sul telefono).",
+    verb_seer: "guarda", verb_magician: "protegge", verb_medium: "va da",
+    confirmAction: (verb, n) => `Conferma: ${verb} ${n}`, choosePlayer: "Scegli un giocatore", thenClose: (r) => `Poi: “${r}, chiudi gli occhi.”`,
+    sayDawn: "Sorge il sole. Tutti aprono gli occhi.", victimBig: (n) => `☠️ Vittima della notte: ${n}`, nobodyBig: "🌅 Stanotte nessuno è morto",
+    onlyForYou: (t) => `🔒 Solo per te: ${t}`, announceDay: "Annuncialo e inizia il giorno", back2: "← Indietro",
+    liveNight: "Metti via il telefono, chiudi gli occhi e segui la voce del master.", liveNightDead: "Sei fuori gioco: tieni gli occhi chiusi e resta in silenzio.",
+    remoteNightIntro: "Tutti chiudono gli occhi. Chi ha un ruolo notturno sceglie dal proprio telefono.",
+    wolvesChose: (n) => `I lupi hanno scelto ${n}`, wolvesDeciding: (p) => `I lupi stanno decidendo: ${p}`,
+    wolvesFirst: "Prima notte: i lupi si riconoscono soltanto", roleOut: (r) => `Il ${r} è fuori gioco`, waitingFor: (n, r) => `In attesa di ${n} (${r})`,
+    seerLooked: (n, t, v) => `${n} guarda ${t}: ${v}`, actionLine: (n, verb, t) => `${n} ${verb} ${t}`,
+    ifResolveNow: (t) => `Se risolvi ora: ${t}`, dawnButton: "🌅 Alba: risolvi la notte",
+    confirmIncomplete: "Non tutti hanno ancora scelto. Le scelte mancanti valgono come nessuna azione. Risolvere comunque?",
+    res_protected: (a) => `i lupi attaccano ${a}, ma il mago protegge la casa. Nessuno muore.`,
+    res_medium: (a) => `i lupi attaccano ${a}; il medium è lì e muore al suo posto.`,
+    "res_medium-away": (a) => `i lupi attaccano la casa di ${a}, ma il medium è fuori in visita e si salva.`,
+    res_killed: (v) => `i lupi uccidono ${v}.`, "res_first-night": "prima notte: i lupi si riconoscono soltanto. Nessuno muore.",
+    "res_no-attack": "i lupi non si sono messi d'accordo su una vittima. Nessuno muore.",
+    forceDawn: "Qualcuno non risponde? Risolvi la notte adesso", confirmForceDawn: "Risolvere la notte adesso? Le scelte mancanti valgono come nessuna azione.",
+    deadNight: "Sei fuori gioco. Resta in silenzio e goditi il resto della partita.", loadingPack: "Caricamento del branco…",
+    packAgrees: (n) => `Il branco è d'accordo: stanotte tocca a ${n}.`, chooseVictimRemote: "Scegli la vittima di stanotte. Tutti i lupi vivi devono scegliere lo stesso giocatore.",
+    firstNightWolf: "Prima notte: guarda chi sono gli altri lupi del tuo branco. Stanotte non si uccide.",
+    seerPrompt: "Scegli un giocatore: scoprirai se è un lupo. Una sola visione per notte, e non si può cambiare.",
+    seerPromptRole: "Scegli un giocatore: scoprirai il suo ruolo. Una sola visione per notte, e non si può cambiare.",
+    seerConfirm: (n) => `Vuoi scoprire ${n}? Non potrai cambiare.`, spiritsAnswering: "Gli spiriti stanno rispondendo…",
+    keepVision: "Tieni per te la tua visione. Ora chiudi gli occhi fino al mattino.",
+    magicianPrompt: "Scegli la casa da proteggere stanotte. Nessuno al suo interno può essere ucciso.",
+    mediumPrompt: "Scegli la casa da visitare stanotte. Se i lupi la attaccano, muori tu al posto del padrone di casa.",
+    villageSleeps: "Chiudi gli occhi… Il villaggio dorme fino al mattino.",
+    // day
+    day: (r) => `☀️ Giorno ${r}`, newsVictim: (n) => `☠️ Vittima della notte: ${n}.`, newsNobody: "🌅 Stanotte nessuno è morto.",
+    wasRole: (r) => ` Era: ${r}.`, eliminatedBy: (n) => `⚖️ Il villaggio ha eliminato ${n}.`, drawnBy: (n) => `⚖️ Ancora pareggio: la sorte ha scelto ${n}.`,
+    nobodyEliminated: "⚖️ Oggi nessuno viene eliminato.", waitNight: (who) => `In attesa che ${who} inizi la notte…`,
+    tiedSelect: "Seleziona i giocatori a pari voti:", runoffBetween: (n) => `Ballottaggio tra ${n}`, selectTwo: "Seleziona almeno 2 giocatori",
+    sayRunoff: (n) => `Ballottaggio tra ${n}: si vota di nuovo!`, sayVote: "Discutete… poi ognuno indichi chi pensa sia un lupo.",
+    tapMostVotes: "Tocca il giocatore con più voti:", eliminate: (n) => `Elimina ${n}`,
+    tieAgainNone: "Ancora pareggio: nessuno viene eliminato", tieAgainRandom: "Ancora pareggio: estrai a sorte", tie: "C'è un pareggio",
+    liveRunoff: (n) => `Ballottaggio tra ${n}: votate di nuovo a voce.`, liveVote: "Discutete e votate a voce. Il master registra il risultato.",
+    remoteRunoff: (n) => `Ballottaggio tra ${n}: votate di nuovo, solo tra loro.`,
+    remoteVote: "Discutete, poi vota chi pensi sia un lupo. Puoi cambiare il voto finché la votazione non si chiude.",
+    watchVote: "Il villaggio sta votando. I voti sono pubblici.", allVoted: "Hanno votato tutti: la votazione si chiude tra pochi secondi…",
+    votedCount: (k, n) => `Hanno votato ${k} giocatori vivi su ${n}.`, closeVote: "⚖️ Chiudi la votazione",
+    confirmCloseVote: "Non hanno ancora votato tutti. Chiudere comunque la votazione?", deadNoVote: "Sei fuori gioco, quindi non puoi votare.",
+    forceClose: "Qualcuno non vota? Chiudi la votazione adesso", confirmForceClose: "Chiudere adesso la votazione con i voti dati finora?",
+    // over
+    gameOver: "Partita finita", wolvesWin: "🐺 Vincono i lupi!", villageWins: "🏡 Vince il villaggio!",
+    backToRoom: "Torna alla stanza", waitNewGame: "In attesa di una nuova partita…",
+    // history
+    logNight: (r) => `Notte ${r}: `, logKilled: "i lupi uccidono ", logNoDeath: "nessun morto",
+    logSeer: (n, v) => `🔒 il veggente guarda ${n}: ${v}.`, logRunoff: (r, n) => `Giorno ${r}: pareggio tra ${n}, ballottaggio`,
+    logDay: (r) => `Giorno ${r}: `, logEliminated: "il villaggio elimina ", logDrawn: " (sorteggio)", logNoElim: "nessuna eliminazione",
+    votes: (n) => (n === 1 ? "1 voto" : `${n} voti`), aWolf: "è un lupo", notAWolf: "non è un lupo",
+    // errors & misc
+    noFreeCode: "Impossibile trovare un codice libero, riprova.", codeLetters: "Il codice è di 4 lettere.",
+    noRoomCode: (c) => `Nessuna stanza con il codice ${c}.`, cantOpen: (m) => `Impossibile aprire la stanza: ${m}`,
+    roomFull: "Questa stanza è piena.", nameTaken: "Questo nome è già usato in questa stanza.", enterName: "Inserisci un nome.",
+    someone: "Qualcuno", confirmLeave: "Vuoi uscire dalla stanza?",
+    confirmEnd: "Terminare la partita e tornare alla stanza? I ruoli verranno cancellati.",
+    copied: "Codice copiato!", codeIs: (c) => `Codice: ${c}`, linkCopied: "Link di invito copiato!", inviteText: (c) => `Gioca con me! Codice ${c}`,
+    cantConnect: (m) => `Impossibile connettersi: ${m}`, teamWolves: "🐺 Lupi", teamVillage: "🏡 Villaggio",
+    // house rules
+    group_wolf: "🐺 Lupi", group_seer: "👁️ Veggente", group_magician: "🪄 Mago", group_medium: "🔮 Medium", group_vote: "⚖️ Votazione",
+    rule_firstNightKill: "I lupi uccidono già la prima notte", rule_firstNightKill_desc: "Se disattivato, la prima notte i lupi si riconoscono soltanto.",
+    rule_wolvesWin: "I lupi vincono quando sono…", opt_wolvesWin_parity: "tanti quanti gli altri", opt_wolvesWin_majority: "più degli altri",
+    rule_seerSees: "Il veggente scopre…", opt_seerSees_team: "se è un lupo o no", opt_seerSees_role: "il ruolo esatto",
+    rule_magicianSelf: "Il mago può proteggere se stesso", rule_magicianSelf_desc: "",
+    rule_magicianRepeat: "Il mago può proteggere la stessa casa due notti di fila", rule_magicianRepeat_desc: "",
+    rule_mediumAwayDies: "Il medium muore se i lupi attaccano casa sua mentre è fuori",
+    rule_mediumAwayDies_desc: "Se disattivato, il medium in visita altrove si salva.",
+    rule_secondTie: "Se anche il ballottaggio finisce pari…", opt_secondTie_none: "nessuno viene eliminato", opt_secondTie_random: "si estrae a sorte",
+    rule_selfVote: "Si può votare se stessi", rule_selfVote_desc: "",
+    rule_reveal: "Quando qualcuno esce di scena, il suo ruolo…", opt_reveal_none: "resta segreto fino alla fine",
+    opt_reveal_voted: "si rivela solo se eliminato al voto", opt_reveal_all: "si rivela sempre",
+  },
+  en: {
+    info: "📖 Rules", settings: "Settings", subtitle: "Game companion", connecting: "Connecting…",
+    setupTitle: "Setup needed", setupText: "Fill in firebase-config.js with your Firebase project's config. See the README.",
+    create: "Create a new room", orJoin: "or join one", roomCode: "Room code", join: "Join",
+    room: "Room", yourName: "Your name", namePlaceholder: "e.g. Marta", iAmMaster: "I am the game master",
+    shareCode: "Share this code with the other players", copyCode: "Copy the code", shareLink: "Share invite link",
+    start: "Start the game", prepare: "Set up the game", assign: "Deal the roles", useSuggested: "Use suggested",
+    cancel: "Cancel", tapToSee: "Tap to see your role", nobodyLooking: "Make sure nobody is looking",
+    tapToHide: "Tap again to hide", rolesTitle: "Roles", endGame: "End the game", history: "History",
+    playersTitle: "Players", editProfile: "Edit name / role", leave: "Leave the room", reconnecting: "Reconnecting…",
+    modeTitle: "Way of playing", modeLive: "🗣️ Live", modeRemote: "📱 Remote",
+    modeLiveDesc: "Everyone at the same table. Phones only show the roles; the master records the night and the vote.",
+    modeRemoteDesc: "Everyone plays on their own phone: night actions and votes happen in the app.",
+    liveNeedsMaster: "Live games need a game master.",
+    settingsTitle: "⚙️ Settings", language: "Language", roomRules: "Room rules", close: "Close",
+    rulesEditable: "They apply to everyone in the room. You can change them until the game starts.",
+    rulesReadOnly: (who) => `Chosen by ${who}. Here you can see the ones in use.`,
+    rulesLocked: "Game in progress: the rules can't change until it ends.",
+    noRoom: "Join a room to see its rules.",
+    masterHint: "The master narrates the game and doesn't play a role. Optional in remote games.",
+    masterTaken: (n) => `${n} is already the game master.`,
+    save: "Save", enterRoom: "Enter the room", back: "Back",
+    gameInProgress: "A game is already in progress in this room.",
+    playersCount: (n) => (n === 1 ? "1 player" : `${n} players`), plusMaster: " + master",
+    noMasterHost: (h) => `No game master: you can still play a remote game, with ${h} as host.`,
+    noMasterYet: "No game master yet.",
+    you: "you", out: "💀 out", host: "Host", master: "Master", left: "(left)", online: "Online", offline: "Offline",
+    waitingPlayers: (n, min) => `Waiting for players: ${n} of at least ${min}.`, playersReady: (n) => `${n} players ready.`,
+    noMasterRemote: " Without a master you play a remote game, and you play too.",
+    waitStart: (who) => `Waiting for ${who} to start the game…`, theMaster: "the master", hostOf: (n) => `${n} (host)`,
+    waitMaster: "Waiting for a game master…", chosenMode: (m) => `Way of playing: ${m}`,
+    masterChoosing: "The master is choosing the roles…", hostChoosing: (n) => `${n} is choosing the roles…`,
+    loadingRole: "Loading your role…", notInGame: "A game is in progress without you. Wait for the next one!",
+    nPlayers: (n) => `${n} players`, suggested: (n, c) => `Suggested for ${n} players: ${c}.`,
+    fillRest: "Fill the remaining places", max: (n) => `Max ${n}`, fewer: (r) => `Fewer ${r}`, more: (r) => `More ${r}`,
+    err_noWolf: "There must be at least one wolf.", err_tooManyWolves: (m, n) => `Wolves must start as a minority: at most ${m} with ${n} players.`,
+    err_tooManyRoles: "More roles than players.", notEnough: "Not enough players.",
+    outSuffix: " (out)", yourPack: (n) => `Your pack: ${n}`, onlyWolf: "You are the only wolf.",
+    yourVisions: (v) => `Your visions: ${v}`, nightN: (r) => `night ${r}`, inThisGame: (c) => `In this game: ${c}`,
+    isWolf: (n) => `${n} is a wolf! 🐺`, notWolf: (n) => `${n} is not a wolf.`, isRole: (n, r) => `${n} is: ${r}`,
+    rolesDealt: "Roles dealt",
+    masterAssignedLive: "Ask everyone to check their role in secret, then put the phones away. You will run the night from here.",
+    masterAssignedRemote: "Ask everyone to check their role in secret. Once everyone has seen it, start the first night.",
+    playerAssignedLive: "Check your role below without letting anyone see it, then put your phone away: the master runs the game out loud.",
+    playerAssignedRemote: "Check your role below without letting anyone see it. The first night starts soon.",
+    seenCount: (k, n) => `${k} of ${n} have seen their role.`, seenAll: "Everyone has seen their role. 🟢",
+    seenLegend: "🟢 has seen their role · 🟡 not yet", seenYes: "Has seen their role", seenNo: "Hasn't seen their role yet",
+    startNight: (r) => `🌙 Start night ${r}`, waitSeen: "Wait until everyone has seen their role",
+    youAreHost: "You are the host of this game.",
+    night: (r) => `🌙 Night ${r}`, step_sleep: "Sleep", step_wolves: "🐺 Wolves", step_seer: "👁️ Seer",
+    step_magician: "🪄 Magician", step_medium: "🔮 Medium", step_dawn: "🌅 Dawn",
+    saySleep: "Night falls on the village. Everyone, close your eyes.", callWolves: "Next: call the wolves",
+    sayWolves: "Wolves, open your eyes… and choose your victim.", sayWolvesFirst: "Wolves, open your eyes and recognise each other.",
+    wolvesAre: (n, names) => `🐺 ${n === 1 ? "The wolf is" : "The wolves are"} ${names}. Tap the player they point at:`,
+    wolvesFirstNight: (names) => `🐺 The wolves (${names}) look at each other. On the first night they don't kill.`,
+    confirmAttack: (n) => `Confirm: the wolves attack ${n}`, chooseVictim: "Select the victim", continue: "Continue",
+    thenWolves: "Then: “Wolves, close your eyes.”",
+    say_seer: "Seer, open your eyes… who do you want to find out about tonight?",
+    say_magician: "Magician, open your eyes… whose house do you protect tonight?",
+    say_medium: "Medium, open your eyes… whose house do you visit tonight?",
+    roleIsOut: (icon, r) => `${icon} The ${r} is out of the game. Call them anyway, so nobody notices, wait a few seconds, then continue.`,
+    holderIs: (icon, n, r) => `${icon} ${n} is the ${r}. Tap the player they point at:`,
+    seerYes: "👍 Yes, a wolf", seerNo: "👎 No, not a wolf", seerRole: (r) => `Role: ${r}`,
+    seerSignal: "Signal the seer: thumbs up if it's a wolf, thumbs down if not.",
+    seerSignalRole: "Show the seer the role in silence (for example by pointing at it on the phone).",
+    verb_seer: "looks at", verb_magician: "protects", verb_medium: "visits",
+    confirmAction: (verb, n) => `Confirm: ${verb} ${n}`, choosePlayer: "Select a player", thenClose: (r) => `Then: “${r}, close your eyes.”`,
+    sayDawn: "The sun rises. Everyone, open your eyes.", victimBig: (n) => `☠️ Tonight's victim: ${n}`, nobodyBig: "🌅 Nobody died tonight",
+    onlyForYou: (t) => `🔒 Only for you: ${t}`, announceDay: "Announce it and start the day", back2: "← Back",
+    liveNight: "Put your phone away, close your eyes and follow the master's voice.", liveNightDead: "You are out: keep your eyes closed and stay silent.",
+    remoteNightIntro: "Everyone closes their eyes. Players with a night role choose on their phone.",
+    wolvesChose: (n) => `The wolves chose ${n}`, wolvesDeciding: (p) => `The wolves are deciding: ${p}`,
+    wolvesFirst: "First night: the wolves only recognise each other", roleOut: (r) => `The ${r} is out`, waitingFor: (n, r) => `Waiting for ${n} (${r})`,
+    seerLooked: (n, t, v) => `${n} looks at ${t}: ${v}`, actionLine: (n, verb, t) => `${n} ${verb} ${t}`,
+    ifResolveNow: (t) => `If you resolve now: ${t}`, dawnButton: "🌅 Dawn: resolve the night",
+    confirmIncomplete: "Not everyone has chosen yet. Missing choices count as no action. Resolve anyway?",
+    res_protected: (a) => `the wolves attack ${a}, but the magician protects the house. Nobody dies.`,
+    res_medium: (a) => `the wolves attack ${a}; the medium is there and dies in their place.`,
+    "res_medium-away": (a) => `the wolves attack ${a}'s house, but the medium is out visiting and survives.`,
+    res_killed: (v) => `the wolves kill ${v}.`, "res_first-night": "first night: the wolves only recognise each other. Nobody dies.",
+    "res_no-attack": "the wolves didn't agree on a victim. Nobody dies.",
+    forceDawn: "Someone isn't responding? Resolve the night now", confirmForceDawn: "Resolve the night now? Missing choices count as no action.",
+    deadNight: "You are out. Stay silent and enjoy the rest of the game.", loadingPack: "Loading your pack…",
+    packAgrees: (n) => `The pack agrees: ${n} is tonight's victim.`, chooseVictimRemote: "Choose tonight's victim. All living wolves must choose the same player.",
+    firstNightWolf: "First night: see who else is in your pack. Nobody is killed tonight.",
+    seerPrompt: "Choose a player: you'll find out whether they are a wolf. One vision per night, and it can't be changed.",
+    seerPromptRole: "Choose a player: you'll find out their role. One vision per night, and it can't be changed.",
+    seerConfirm: (n) => `Find out about ${n}? You can't change it.`, spiritsAnswering: "The spirits are answering…",
+    keepVision: "Keep your vision to yourself. Now close your eyes until morning.",
+    magicianPrompt: "Choose whose house to protect tonight. Nobody in it can be killed.",
+    mediumPrompt: "Choose whose house to visit tonight. If the wolves attack it, you die in their place.",
+    villageSleeps: "Close your eyes… The village sleeps until morning.",
+    day: (r) => `☀️ Day ${r}`, newsVictim: (n) => `☠️ Tonight's victim: ${n}.`, newsNobody: "🌅 Nobody died during the night.",
+    wasRole: (r) => ` They were: ${r}.`, eliminatedBy: (n) => `⚖️ The village eliminated ${n}.`, drawnBy: (n) => `⚖️ Tied again: chance picked ${n}.`,
+    nobodyEliminated: "⚖️ Nobody is eliminated today.", waitNight: (who) => `Waiting for ${who} to start the night…`,
+    tiedSelect: "Select the players who tied with the most votes:", runoffBetween: (n) => `Run-off between ${n}`, selectTwo: "Select at least 2 players",
+    sayRunoff: (n) => `Run-off between ${n}: vote again!`, sayVote: "Discuss… then everyone points at who they think is a wolf.",
+    tapMostVotes: "Tap the player with the most votes:", eliminate: (n) => `Eliminate ${n}`,
+    tieAgainNone: "Tied again: nobody is eliminated", tieAgainRandom: "Tied again: draw at random", tie: "It's a tie",
+    liveRunoff: (n) => `Run-off between ${n}: vote again out loud.`, liveVote: "Discuss and vote out loud. The master records the result.",
+    remoteRunoff: (n) => `Run-off between ${n}: vote again, only among them.`,
+    remoteVote: "Discuss, then vote who you think is a wolf. You can change your vote until the vote closes.",
+    watchVote: "The village is voting. Votes are public.", allVoted: "Everyone has voted: the vote closes in a few seconds…",
+    votedCount: (k, n) => `${k} of ${n} living players have voted.`, closeVote: "⚖️ Close the vote",
+    confirmCloseVote: "Not everyone has voted yet. Close the vote anyway?", deadNoVote: "You are out, so you can't vote.",
+    forceClose: "Someone isn't voting? Close the vote now", confirmForceClose: "Close the vote now with the votes cast so far?",
+    gameOver: "Game over", wolvesWin: "🐺 The wolves win!", villageWins: "🏡 The village wins!",
+    backToRoom: "Back to the room", waitNewGame: "Waiting for a new game…",
+    logNight: (r) => `Night ${r}: `, logKilled: "the wolves kill ", logNoDeath: "nobody died",
+    logSeer: (n, v) => `🔒 the seer looks at ${n}: ${v}.`, logRunoff: (r, n) => `Day ${r}: tie between ${n}, run-off`,
+    logDay: (r) => `Day ${r}: `, logEliminated: "the village eliminates ", logDrawn: " (drawn)", logNoElim: "nobody eliminated",
+    votes: (n) => (n === 1 ? "1 vote" : `${n} votes`), aWolf: "a wolf", notAWolf: "not a wolf",
+    noFreeCode: "Could not find a free room code, please retry.", codeLetters: "The code is 4 letters.",
+    noRoomCode: (c) => `No room with code ${c}.`, cantOpen: (m) => `Could not open the room: ${m}`,
+    roomFull: "This room is full.", nameTaken: "That name is already taken in this room.", enterName: "Please enter a name.",
+    someone: "Someone", confirmLeave: "Leave this room?",
+    confirmEnd: "End this game and go back to the room? Roles will be cleared.",
+    copied: "Code copied!", codeIs: (c) => `Code: ${c}`, linkCopied: "Invite link copied!", inviteText: (c) => `Join my game! Code ${c}`,
+    cantConnect: (m) => `Could not connect: ${m}`, teamWolves: "🐺 Wolves", teamVillage: "🏡 Village",
+    group_wolf: "🐺 Wolves", group_seer: "👁️ Seer", group_magician: "🪄 Magician", group_medium: "🔮 Medium", group_vote: "⚖️ Voting",
+    rule_firstNightKill: "The wolves kill on the first night", rule_firstNightKill_desc: "If off, on the first night the wolves only recognise each other.",
+    rule_wolvesWin: "The wolves win when they are…", opt_wolvesWin_parity: "as many as the others", opt_wolvesWin_majority: "more than the others",
+    rule_seerSees: "The seer learns…", opt_seerSees_team: "whether it's a wolf", opt_seerSees_role: "the exact role",
+    rule_magicianSelf: "The magician can protect themselves", rule_magicianSelf_desc: "",
+    rule_magicianRepeat: "The magician can protect the same house two nights in a row", rule_magicianRepeat_desc: "",
+    rule_mediumAwayDies: "The medium dies if the wolves attack their house while they're away",
+    rule_mediumAwayDies_desc: "If off, the medium visiting elsewhere survives.",
+    rule_secondTie: "If the run-off is tied too…", opt_secondTie_none: "nobody is eliminated", opt_secondTie_random: "draw at random",
+    rule_selfVote: "Players can vote for themselves", rule_selfVote_desc: "",
+    rule_reveal: "When someone leaves the game, their role…", opt_reveal_none: "stays secret until the end",
+    opt_reveal_voted: "is revealed only if voted out", opt_reveal_all: "is always revealed",
+  },
+};
+
+let lang = "it";
+
+export const getLang = () => lang;
+export function setLang(l) {
+  lang = LANGS.includes(l) ? l : "it";
+  document.documentElement.lang = lang;
+}
+
+/** Translate `key`, calling it with `args` when it's a function. Falls back to Italian, then to the key. */
+export function t(key, ...args) {
+  const v = STRINGS[lang][key] ?? STRINGS.it[key] ?? key;
+  return typeof v === "function" ? v(...args) : v;
+}
+
+export const roleName = (role, count = 1) => ROLE_NAMES[lang][role][count === 1 ? 0 : 1];
+export const roleDesc = (role, rules) => ROLE_DESC[lang][role](withDefaults(rules));
+export const roleInfo = (role) => ROLE_INFO[lang][role];
+
+/** Fill every element marked with data-i18n (text), data-i18n-ph (placeholder), data-i18n-title / -aria (attributes). */
+export function translatePage() {
+  for (const e of document.querySelectorAll("[data-i18n]")) e.textContent = t(e.dataset.i18n);
+  for (const e of document.querySelectorAll("[data-i18n-ph]")) e.placeholder = t(e.dataset.i18nPh);
+  for (const e of document.querySelectorAll("[data-i18n-title]")) e.title = t(e.dataset.i18nTitle);
+  for (const e of document.querySelectorAll("[data-i18n-aria]")) e.setAttribute("aria-label", t(e.dataset.i18nAria));
+}

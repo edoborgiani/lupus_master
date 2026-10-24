@@ -45,6 +45,27 @@
             }
           }
         },
+        "settings": {
+          ".write": "auth != null && (root.child('lobbies').child($code).child('masterId').val() === auth.uid || (!root.child('lobbies').child($code).child('masterId').exists() && root.child('lobbies').child($code).child('hostId').val() === auth.uid)) && !root.child('lobbies').child($code).child('game').exists()",
+          "mode": {
+            ".validate": "newData.val() === 'live' || newData.val() === 'remote'"
+          },
+          "rules": {
+            "$rule": {
+              ".validate": "newData.isBoolean() || newData.isString()"
+            }
+          },
+          "$other": {
+            ".validate": false
+          }
+        },
+        "seen": {
+          ".write": "auth != null && (root.child('lobbies').child($code).child('masterId').val() === auth.uid || (!root.child('lobbies').child($code).child('masterId').exists() && root.child('lobbies').child($code).child('hostId').val() === auth.uid))",
+          "$uid": {
+            ".write": "auth != null && auth.uid === $uid",
+            ".validate": "newData.val() === true"
+          }
+        },
         "game": {
           ".write": "auth != null && (root.child('lobbies').child($code).child('masterId').val() === auth.uid || (!root.child('lobbies').child($code).child('masterId').exists() && root.child('lobbies').child($code).child('hostId').val() === auth.uid))",
           ".validate": "newData.hasChild('phase')",
@@ -59,7 +80,7 @@
           ".write": "auth != null && (root.child('lobbies').child($code).child('masterId').val() === auth.uid || (!root.child('lobbies').child($code).child('masterId').exists() && root.child('lobbies').child($code).child('hostId').val() === auth.uid))",
           "$uid": {
             ".write": "auth != null && auth.uid === $uid && root.child('lobbies').child($code).child('game').child('mode').val() === 'remote' && root.child('lobbies').child($code).child('game').child('phase').val() === 'day' && root.child('lobbies').child($code).child('game').child('alive').child($uid).val() === true && root.child('lobbies').child($code).child('game').child('vote').child('done').val() !== true",
-            ".validate": "newData.isString() && newData.val() !== $uid && root.child('lobbies').child($code).child('game').child('alive').child(newData.val()).val() === true && (!root.child('lobbies').child($code).child('game').child('vote').child('candidates').exists() || root.child('lobbies').child($code).child('game').child('vote').child('candidates').child(newData.val()).exists())"
+            ".validate": "newData.isString() && (newData.val() !== $uid || root.child('lobbies').child($code).child('game').child('rules').child('selfVote').val() === true) && root.child('lobbies').child($code).child('game').child('alive').child(newData.val()).val() === true && (!root.child('lobbies').child($code).child('game').child('vote').child('candidates').exists() || root.child('lobbies').child($code).child('game').child('vote').child('candidates').child(newData.val()).exists())"
           }
         },
         "$other": {
@@ -94,7 +115,7 @@
           "$uid": {
             ".read": "auth != null && auth.uid === $uid",
             ".write": "auth != null && auth.uid === $uid && root.child('lobbies').child($code).child('game').child('mode').val() === 'remote' && root.child('lobbies').child($code).child('game').child('phase').val() === 'night' && root.child('lobbies').child($code).child('game').child('alive').child($uid).val() === true && (root.child('secrets').child($code).child('roles').child($uid).val() === 'magician' || root.child('secrets').child($code).child('roles').child($uid).val() === 'medium' || (root.child('secrets').child($code).child('roles').child($uid).val() === 'seer' && !data.exists()))",
-            ".validate": "newData.isString() && newData.val() !== $uid && root.child('lobbies').child($code).child('game').child('alive').child(newData.val()).val() === true"
+            ".validate": "newData.isString() && (newData.val() !== $uid || (root.child('secrets').child($code).child('roles').child($uid).val() === 'magician' && root.child('lobbies').child($code).child('game').child('rules').child('magicianSelf').val() === true)) && root.child('lobbies').child($code).child('game').child('alive').child(newData.val()).val() === true"
           }
         },
         "visions": {
@@ -103,6 +124,11 @@
             "$round": {
               ".validate": "newData.hasChildren(['target', 'wolf'])"
             }
+          }
+        },
+        "memo": {
+          "$uid": {
+            ".read": "auth != null && auth.uid === $uid"
           }
         },
         "nightLog": {

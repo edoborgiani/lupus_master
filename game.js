@@ -1,41 +1,37 @@
-// Lupus in Tabula - regole del gioco (funzioni pure, senza Firebase né DOM, così si possono testare da sole)
+// Lupus in Tabula - game rules (pure functions, no Firebase, DOM or text, so they can be tested alone)
 
 export const ROLES = {
-  wolf: {
-    name: "Lupo", plural: "Lupi", icon: "🐺", team: "wolves", min: 1,
-    desc: "Ogni notte i lupi scelgono insieme un giocatore da uccidere. Vincete quando i lupi sono tanti quanti gli altri.",
-    info: "Di notte i lupi si riconoscono e si accordano su una vittima: devono essere tutti d'accordo. "
-      + "Di giorno fingono di essere innocenti e cercano di far eliminare gli abitanti del villaggio.",
-  },
-  seer: {
-    name: "Veggente", plural: "Veggenti", icon: "👁️", team: "village", max: 1,
-    desc: "Ogni notte indichi un giocatore e scopri se è un lupo oppure no.",
-    info: "Una sola visione per notte, e non si può cambiare. Usa ciò che scopri per guidare il villaggio, "
-      + "ma attento: se i lupi capiscono chi sei, sarai il loro prossimo bersaglio.",
-  },
-  magician: {
-    name: "Mago", plural: "Maghi", icon: "🪄", team: "village", max: 1,
-    desc: "Ogni notte proteggi la casa di un giocatore (non la tua): nessuno al suo interno può essere ucciso quella notte.",
-    info: "Puoi proteggere la stessa persona più notti di fila. La protezione vale per tutta la casa: "
-      + "se il medium è in visita lì, è salvo anche lui.",
-  },
-  medium: {
-    name: "Medium", plural: "Medium", icon: "🔮", team: "village", max: 1,
-    desc: "Ogni notte vai a casa di un altro giocatore. Se i lupi attaccano quella casa, muori tu al suo posto.",
-    info: "Non puoi visitare te stesso. Se il mago protegge la casa che visiti, vi salvate entrambi. "
-      + "Se invece i lupi attaccano proprio te, non c'è nessuno a salvarti.",
-  },
-  citizen: {
-    name: "Cittadino", plural: "Cittadini", icon: "🧑‍🌾", team: "village",
-    desc: "Sei un semplice abitante del villaggio. Di giorno discuti e vota per scoprire ed eliminare i lupi.",
-    info: "Non hai poteri notturni, ma il tuo voto conta: osserva, ascolta e smaschera i lupi.",
-  },
+  wolf: { icon: "🐺", team: "wolves", min: 1 },
+  seer: { icon: "👁️", team: "village", max: 1 },
+  magician: { icon: "🪄", team: "village", max: 1 },
+  medium: { icon: "🔮", team: "village", max: 1 },
+  citizen: { icon: "🧑‍🌾", team: "village" },
 };
-export const SPECIAL_ROLES = ["wolf", "seer", "magician", "medium"]; // i cittadini riempiono i posti rimasti
+export const SPECIAL_ROLES = ["wolf", "seer", "magician", "medium"]; // citizens fill the remaining slots
 export const ROLE_ORDER = [...SPECIAL_ROLES, "citizen"];
-export const NIGHT_ROLES = ["seer", "magician", "medium"]; // ruoli che scelgono un giocatore di notte (oltre ai lupi)
+export const NIGHT_ROLES = ["seer", "magician", "medium"]; // roles that pick a player at night (besides the wolves)
 
-// ---------- preparazione ----------
+/** House rules each group can change. The defaults are the rules the app was first built with. */
+export const DEFAULT_RULES = {
+  firstNightKill: true,     // the wolves kill on the first night (false: they only recognise each other)
+  wolvesWin: "parity",      // "parity": wolves win when as many as the others; "majority": only when more
+  seerSees: "team",         // "team": wolf or not; "role": the exact role
+  magicianSelf: false,      // the magician may protect their own house
+  magicianRepeat: true,     // the magician may protect the same house two nights in a row
+  mediumAwayDies: true,     // wolves attack the medium's own house while the medium is visiting elsewhere: the medium dies
+  secondTie: "none",        // tie in the run-off: "none" eliminated, or "random" among the tied
+  selfVote: false,          // players may vote for themselves
+  reveal: "none",           // roles revealed when leaving the game: "none", "voted" (only by vote), "all"
+};
+export const RULE_OPTIONS = {
+  wolvesWin: ["parity", "majority"],
+  seerSees: ["team", "role"],
+  secondTie: ["none", "random"],
+  reveal: ["none", "voted", "all"],
+};
+export const withDefaults = (rules) => ({ ...DEFAULT_RULES, ...(rules || {}) });
+
+// ---------- setup ----------
 
 export function suggestedCounts(n) {
   const wolf = Math.max(1, Math.floor(n / 4));
@@ -45,20 +41,14 @@ export function suggestedCounts(n) {
   return { wolf, seer, magician, medium, citizen: n - wolf - seer - magician - medium };
 }
 
-export const maxWolves = (n) => Math.ceil(n / 2) - 1; // i lupi devono partire in minoranza
+export const maxWolves = (n) => Math.ceil(n / 2) - 1; // wolves must start as a minority
 
+/** Returns an error code (translated by the app), or "" when the counts are fine. */
 export function setupError(counts, n) {
-  if (counts.wolf < 1) return "Serve almeno un lupo.";
-  if (counts.wolf > maxWolves(n)) return `I lupi devono partire in minoranza: al massimo ${maxWolves(n)} con ${n} giocatori.`;
-  if (counts.citizen < 0) return "Ci sono più ruoli che giocatori.";
+  if (counts.wolf < 1) return "noWolf";
+  if (counts.wolf > maxWolves(n)) return "tooManyWolves";
+  if (counts.citizen < 0) return "tooManyRoles";
   return "";
-}
-
-export function formatCounts(counts) {
-  return ROLE_ORDER
-    .filter((r) => counts[r] > 0)
-    .map((r) => `${counts[r]} ${counts[r] === 1 ? ROLES[r].name : ROLES[r].plural}`)
-    .join(" · ");
 }
 
 export function dealRoles(ids, counts, randomInt) {
@@ -70,14 +60,17 @@ export function dealRoles(ids, counts, randomInt) {
   return Object.fromEntries(ids.map((id, i) => [id, deck[i]]));
 }
 
-// ---------- utilità ----------
+// ---------- helpers ----------
 
 export const aliveIds = (alive) => Object.keys(alive || {}).filter((id) => alive[id] === true);
 export const livingWithRole = (roles, alive, role) => aliveIds(alive).filter((id) => roles[id] === role);
 
-// ---------- notte ----------
+// ---------- night ----------
 
-/** La scelta dei lupi: valida solo se tutti i lupi vivi hanno scelto lo stesso bersaglio. */
+/** On the first night the wolves may only recognise each other, depending on the rules. */
+export const wolvesAct = (rules, round) => withDefaults(rules).firstNightKill || round > 1;
+
+/** The wolves' choice: only valid when every living wolf picked the same target. */
 export function wolfTarget(roles, alive, wolfVotes = {}) {
   const wolves = livingWithRole(roles, alive, "wolf");
   const picks = wolves.map((id) => wolfVotes[id]).filter((t) => t && alive[t] === true && roles[t] !== "wolf");
@@ -85,45 +78,63 @@ export function wolfTarget(roles, alive, wolfVotes = {}) {
   return { target: agreed ? picks[0] : null, agreed, waiting: wolves.filter((id) => !wolfVotes[id]) };
 }
 
-/** Stato della notte per ruolo, per dire al master chi deve ancora agire. */
-export function nightStatus(roles, alive, wolfVotes = {}, actions = {}) {
-  const wolves = wolfTarget(roles, alive, wolfVotes);
-  const holders = Object.fromEntries(NIGHT_ROLES.map((r) => [r, livingWithRole(roles, alive, r)[0] || null]));
-  const complete = wolves.agreed && NIGHT_ROLES.every((r) => !holders[r] || !!actions[holders[r]]);
-  return { wolves, ...holders, complete };
+/** Players the magician may protect tonight. */
+export function protectable(roles, alive, rules, lastProtected = null) {
+  const r = withDefaults(rules);
+  const [magician] = livingWithRole(roles, alive, "magician");
+  return aliveIds(alive).filter((id) => (r.magicianSelf || id !== magician) && (r.magicianRepeat || id !== lastProtected));
 }
 
-/** La visione del veggente: true se il giocatore indicato è un lupo. */
-export const seerSees = (roles, target) => roles[target] === "wolf";
+/** Night status per role, used to tell who still has to act. */
+export function nightStatus(roles, alive, wolfVotes = {}, actions = {}, { rules, round = 1 } = {}) {
+  const wolves = wolfTarget(roles, alive, wolfVotes);
+  const wolvesDone = !wolvesAct(rules, round) || wolves.agreed;
+  const holders = Object.fromEntries(NIGHT_ROLES.map((r) => [r, livingWithRole(roles, alive, r)[0] || null]));
+  const complete = wolvesDone && NIGHT_ROLES.every((r) => !holders[r] || !!actions[holders[r]]);
+  return { wolves, wolvesDone, ...holders, complete };
+}
+
+/** What the seer learns about `target`. */
+export function seerVision(roles, target, rules) {
+  const vision = { target, wolf: roles[target] === "wolf" };
+  if (withDefaults(rules).seerSees === "role") vision.role = roles[target];
+  return vision;
+}
 
 /**
- * Risolve la notte.
- * - Il mago protegge una casa: nessuno lì dentro muore (nemmeno il medium, se è in visita).
- * - Se i lupi attaccano la casa che il medium sta visitando, muore il medium al posto del padrone di casa.
+ * Resolve the night.
+ * - The magician protects a house: nobody in it dies (the medium too, if visiting).
+ * - If the wolves attack the house the medium is visiting, the medium dies instead.
+ * - If the wolves attack the medium's own house while the medium is away, the rules decide.
  */
-export function resolveNight(roles, alive, wolfVotes = {}, actions = {}) {
-  const { target } = wolfTarget(roles, alive, wolfVotes);
+export function resolveNight(roles, alive, wolfVotes = {}, actions = {}, { rules, round = 1, lastProtected = null } = {}) {
+  const r = withDefaults(rules);
+  const target = wolvesAct(r, round) ? wolfTarget(roles, alive, wolfVotes).target : null;
   const [magician] = livingWithRole(roles, alive, "magician");
   const [medium] = livingWithRole(roles, alive, "medium");
-  const valid = (by, t) => (t && t !== by && alive[t] === true ? t : null);
-  const protectedId = magician ? valid(magician, actions[magician]) : null;
-  const visitedId = medium ? valid(medium, actions[medium]) : null;
+  const pick = magician ? actions[magician] : null;
+  const protectedId = pick && protectable(roles, alive, r, lastProtected).includes(pick) ? pick : null;
+  const visit = medium ? actions[medium] : null;
+  const visitedId = visit && visit !== medium && alive[visit] === true ? visit : null;
 
   let victim = null;
   let reason = "no-attack";
-  if (target && target === protectedId) reason = "protected";
+  if (!wolvesAct(r, round)) reason = "first-night";
+  else if (target && target === protectedId) reason = "protected";
   else if (target && target === visitedId) { victim = medium; reason = "medium"; }
+  else if (target && target === medium && visitedId && !r.mediumAwayDies) reason = "medium-away";
   else if (target) { victim = target; reason = "killed"; }
   return { attacked: target, protected: protectedId, visited: visitedId, victim, reason };
 }
 
-// ---------- giorno ----------
+// ---------- day ----------
 
-/** Conta i voti validi: votante vivo, bersaglio vivo, non se stesso, e tra i candidati (ballottaggio). */
-export function tallyVotes(votes = {}, alive, candidates = null) {
+/** Count valid votes: voter alive, target alive, among the candidates (run-off), self-votes per the rules. */
+export function tallyVotes(votes = {}, alive, candidates = null, rules) {
+  const selfVote = withDefaults(rules).selfVote;
   const counts = {};
   for (const [voter, target] of Object.entries(votes)) {
-    if (alive[voter] !== true || alive[target] !== true || voter === target) continue;
+    if (alive[voter] !== true || alive[target] !== true || (voter === target && !selfVote)) continue;
     if (candidates && !candidates[target]) continue;
     counts[target] = (counts[target] || 0) + 1;
   }
@@ -132,28 +143,41 @@ export function tallyVotes(votes = {}, alive, candidates = null) {
   return { counts, max, leaders };
 }
 
-/** Chiude una votazione: un solo più votato viene eliminato; un pareggio al primo turno porta al ballottaggio; un secondo pareggio non elimina nessuno. */
-export function closeVote(ballot, votes, alive, candidates = null) {
-  const { counts, leaders } = tallyVotes(votes, alive, candidates);
+/**
+ * Close a ballot: one leader is eliminated; a tie on the first ballot starts a run-off;
+ * a tie in the run-off spares everyone, or eliminates one of the tied at random, per the rules.
+ */
+export function closeVote(ballot, votes, alive, candidates = null, rules, randomInt = () => 0) {
+  const { counts, leaders } = tallyVotes(votes, alive, candidates, rules);
   if (leaders.length === 1) return { eliminated: leaders[0], runoff: null, counts };
   if (leaders.length > 1 && ballot === 1) return { eliminated: null, runoff: leaders, counts };
+  if (leaders.length > 1 && withDefaults(rules).secondTie === "random") {
+    return { eliminated: leaders[randomInt(leaders.length)], runoff: null, counts, drawn: true };
+  }
   return { eliminated: null, runoff: null, counts };
 }
 
-// ---------- fine ----------
+/** Whether a player's role is shown to everyone when they leave the game. `how`: "vote" or "night". */
+export const revealsRole = (rules, how) => {
+  const reveal = withDefaults(rules).reveal;
+  return reveal === "all" || (reveal === "voted" && how === "vote");
+};
 
-/** "village" quando non restano lupi, "wolves" quando i lupi sono almeno quanti gli altri. */
-export function winner(roles, alive) {
+// ---------- end ----------
+
+/** "village" when no wolves are left; "wolves" when they are as many as (or, per the rules, more than) the others. */
+export function winner(roles, alive, rules) {
   const living = aliveIds(alive);
   const wolves = living.filter((id) => roles[id] === "wolf").length;
+  const others = living.length - wolves;
   if (wolves === 0) return "village";
-  if (wolves >= living.length - wolves) return "wolves";
+  if (withDefaults(rules).wolvesWin === "majority" ? wolves > others : wolves >= others) return "wolves";
   return null;
 }
 
-// ---------- modalità dal vivo ----------
+// ---------- live mode ----------
 
-/** Passi che il master segue ogni notte dal vivo. I ruoli in gioco vengono sempre chiamati, anche se fuori gioco. */
+/** Steps the master walks through each night in live mode. Roles in the game are always called, even when dead. */
 export function nightSteps(counts = {}) {
   return ["sleep", "wolves", ...NIGHT_ROLES.filter((r) => counts[r]), "dawn"];
 }
