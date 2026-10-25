@@ -7,9 +7,10 @@ export const ROLES = {
   medium: { team: "village", max: 1 },
   mason: { team: "village", group: 2 },  // none, or at least two: they know each other
   prole: { team: "village", max: 1 },    // becomes a wolf if the wolves kill them
+  mayor: { team: "village", max: 1 },    // may decide the day's vote alone
   citizen: { team: "village" },
 };
-export const SPECIAL_ROLES = ["wolf", "seer", "magician", "medium", "mason", "prole"]; // citizens fill the remaining slots
+export const SPECIAL_ROLES = ["wolf", "seer", "magician", "medium", "mason", "prole", "mayor"]; // citizens fill the remaining slots
 export const ROLE_ORDER = [...SPECIAL_ROLES, "citizen"];
 export const NIGHT_ROLES = ["seer", "magician", "medium"]; // roles that pick a player at night (besides the wolves)
 
@@ -28,6 +29,7 @@ export const DEFAULT_RULES = {
   reveal: "none",           // roles revealed when leaving the game: "none", "voted" (only by vote), "all"
   masonsWake: "first",      // live: the master calls the masons on the "first" night only, or "every" night
   hybridVote: "hands",      // hybrid games: the day vote by show of "hands" (the master records it) or on "phones"
+  mayorUses: "once",        // the mayor decides the vote alone "once" per game, or "every" day
   proleKnows: true,         // the prole knows their role (false: they believe they are a citizen until bitten)
   seerSeesProle: "village", // before the bite the seer sees the prole as "village" (not a wolf) or "wolf"
 };
@@ -39,6 +41,7 @@ export const RULE_OPTIONS = {
   reveal: ["none", "voted", "all"],
   masonsWake: ["first", "every"],
   hybridVote: ["hands", "phones"],
+  mayorUses: ["once", "every"],
   seerSeesProle: ["village", "wolf"],
 };
 export const withDefaults = (rules) => ({ ...DEFAULT_RULES, ...(rules || {}) });
@@ -52,7 +55,8 @@ export function suggestedCounts(n) {
   const medium = n >= 6 ? 1 : 0;
   const mason = n >= 10 ? 2 : 0;
   const prole = n >= 12 ? 1 : 0;
-  return { wolf, seer, magician, medium, mason, prole, citizen: n - wolf - seer - magician - medium - mason - prole };
+  const mayor = 0; // optional: the master adds one if they like
+  return { wolf, seer, magician, medium, mason, prole, mayor, citizen: n - wolf - seer - magician - medium - mason - prole - mayor };
 }
 
 export const maxWolves = (n) => Math.ceil(n / 2) - 1; // wolves must start as a minority
@@ -196,6 +200,9 @@ export function closeVote(ballot, votes, alive, candidates = null, rules, random
   }
   return { eliminated: null, runoff: null, counts };
 }
+
+/** Whether the mayor may still decide a vote alone (`used`: they already did once in this game). */
+export const mayorCanDecide = (rules, used) => withDefaults(rules).mayorUses === "every" || !used;
 
 /** Whether a player's role is shown to everyone when they leave the game. `how`: "vote" or "night". */
 export const revealsRole = (rules, how) => {

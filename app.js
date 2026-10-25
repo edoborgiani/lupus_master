@@ -18,9 +18,11 @@
 //   lobbies/{CODE}/presence/{uid}/{connectionId}  true while that tab is online
 //   lobbies/{CODE}/settings           { mode, rules } chosen by the controller before the game
 //   lobbies/{CODE}/seen/{uid}         true once the player has looked at their role
-//   lobbies/{CODE}/game               { phase, mode, rules, counts, round, step, alive, vote, log, revealed, winner, reveal }
+//   lobbies/{CODE}/game               { phase, mode, rules, counts, round, step, alive, vote, log, revealed, winner, reveal,
+//                                       mayor (uid, once they used their power), mayorUsed }
 //   lobbies/{CODE}/votes/{uid}        remote day vote: uid voted against (public, like pointing)
 //   lobbies/{CODE}/nightDone/{uid}    remote: true once the player has confirmed tonight's pick
+//   lobbies/{CODE}/decree/{uid}       phone vote: the mayor decides alone who is eliminated (this reveals them)
 // Secret data, readable only by the controller (and per database.rules.json):
 //   secrets/{CODE}/roles/{uid}        role id; each player can read only their own
 //   secrets/{CODE}/wolves/{uid}       true; readable by wolves so they know their pack
@@ -40,7 +42,7 @@ import { firebaseConfig } from "./firebase-config.js";
 import {
   ROLES, ROLE_ORDER, NIGHT_ROLES, DEFAULT_RULES, RULE_OPTIONS, withDefaults, suggestedCounts, maxWolves, setupError,
   dealRoles, aliveIds, livingWithRole, wolfTarget, wolvesAct, protectable, nightStatus, seerVision, resolveNight,
-  tallyVotes, closeVote, revealsRole, winner, nightSteps, suspectStats, SKIP, seerCanLook, seerUsedBefore, SPECIAL_ROLES, isProle, trueRole,
+  tallyVotes, closeVote, revealsRole, winner, nightSteps, suspectStats, mayorCanDecide, SKIP, seerCanLook, seerUsedBefore, SPECIAL_ROLES, isProle, trueRole,
 } from "./game.js";
 import { LANGS, t, getLang, setLang, roleName, roleDesc, roleInfo, guideHtml, translatePage } from "./i18n.js";
 
@@ -57,6 +59,7 @@ const RULE_GROUPS = [
   ["medium", ["mediumAwayDies", "mediumWolfHouse"]],
   ["mason", ["masonsWake"]],
   ["prole", ["proleKnows", "seerSeesProle"]],
+  ["mayor", ["mayorUses"]],
   ["vote", ["secondTie", "selfVote", "reveal", "hybridVote"]],
 ];
 
@@ -114,6 +117,8 @@ let stepKey = "";
 let liveSel = null;
 let tieSel = new Set();
 let tieMode = false;
+let decreeMode = false;   // the mayor (phone) or the master (live) is picking who the mayor eliminates
+let decreeKey = null;     // controller: mayor's decree being applied, to avoid applying it twice
 // masterless remote: pending automatic step
 let autoKey = null;
 let autoTimer = null;
@@ -229,6 +234,7 @@ function renderLobby() {
     else if (!lobby.masterId && p.id === lobby.hostId) li.append(badge(t("host"), "special"));
     const shown = game()?.revealed?.[p.id];
     if (shown) li.append(roleBadge(shown));
+    else if (game()?.mayor === p.id) li.querySelector(".pname").append(roleBadge("mayor")); // revealed by their decision
     return li;
   }));
 
@@ -282,6 +288,7 @@ function renderGame() {
     liveSel = null;
     tieSel = new Set();
     tieMode = false;
+    decreeMode = false;
     pendingSel = null;
     changing = false;
   }
@@ -334,6 +341,7 @@ function renderGame() {
   }
   renderLog();
   if (ctrl && g.mode !== "live") answerSeer();
+  if (ctrl) applyDecree();
   if (isHostOnly()) autoAdvance();
 }
 
@@ -724,6 +732,16 @@ function liveDay() {
       action(t("cancel"), () => { tieMode = false; renderGame(); }, { cls: "link" }));
   }
 
+  const [mayor] = livingWithRole(secrets.roles || {}, alive(), "mayor");
+  const mayorPower = mayor && mayorCanDecide(rules(), g.mayorUsed);
+  if (mayorPower && decreeMode) {
+    return phaseCard("day", title, news,
+      iconText("mayor", t("decreeLive", playerName(mayor))),
+      choiceList(candidates.filter((id) => id !== mayor), liveSel, pickLocal),
+      action(liveSel ? t("confirmDecree", playerName(liveSel)) : t("choosePlayer"),
+        run(() => applyVoteResult({ eliminated: liveSel, mayor })), { disabled: !liveSel }),
+      action(t("cancel"), () => { decreeMode = false; renderGame(); }, { cls: "link" }));
+  }
   const runoff = vote.ballot === 2;
   const random = rules().secondTie === "random";
   return phaseCard("day", title, news,
@@ -735,7 +753,9 @@ function liveDay() {
       ? action(random ? t("tieAgainRandom") : t("tieAgainNone"), run(() => applyVoteResult(random
         ? { eliminated: candidates[randomInt(candidates.length)], drawn: true }
         : { eliminated: null })), { cls: "link" })
-      : action(t("tie"), () => { tieMode = true; renderGame(); }, { cls: "link" }));
+      : action(t("tie"), () => { tieMode = true; renderGame(); }, { cls: "link" }),
+    mayorPower && action([roleIcon("mayor"), t("decreeLiveButton", playerName(mayor))], () => { decreeMode = true; liveSel = null; renderGame(); },
+      { cls: "secondary" }));
 }
 
 // --- live mode (players' phones) ---
@@ -908,7 +928,8 @@ function dayResult(title, news, vote) {
   const g = game();
   const shown = vote.eliminated && g.revealed?.[vote.eliminated];
   const result = vote.eliminated
-    ? (vote.drawn ? t("drawnBy", playerName(vote.eliminated)) : t("eliminatedBy", playerName(vote.eliminated)))
+    ? (vote.mayor ? t("decreeBy", playerName(vote.mayor), playerName(vote.eliminated))
+      : vote.drawn ? t("drawnBy", playerName(vote.eliminated)) : t("eliminatedBy", playerName(vote.eliminated)))
       + (shown ? t("wasRole", roleName(shown)) : "")
     : t("nobodyEliminated");
   const next = action(startNightLabel(g.round + 1), run(startNight));
@@ -945,6 +966,13 @@ function renderDay() {
       { extra: voters, right: tally })
     : choiceList(shown, master ? null : votes[uid], null, voters, tally);
 
+  const mayorPower = canVote && myRole === "mayor" && mayorCanDecide(rules(), g.mayorUsed);
+  if (mayorPower && decreeMode) {
+    return phaseCard("day", title, nightNews(), text(t("decreePrompt")),
+      confirmedChoice(candidates.filter((id) => id !== uid), null, (id) => t("confirmDecree", playerName(id)),
+        (id) => set(lobbyRef("decree", uid), id), { final: true }),
+      action(t("cancel"), () => { decreeMode = false; pendingSel = null; renderGame(); }, { cls: "link" }));
+  }
   const intro = vote.ballot === 2 ? t("remoteRunoff", listNames(candidates)) : canVote ? t("remoteVote") : t("watchVote");
   const everyone = voted === living.length;
   phaseCard("day", title, nightNews(), text(intro), list,
@@ -953,6 +981,8 @@ function renderDay() {
       if (!everyone && !confirm(t("confirmCloseVote"))) return;
       run(closeVoteNow)();
     }),
+    mayorPower && action([roleIcon("mayor"), t("mayorPower")], () => { decreeMode = true; pendingSel = null; renderGame(); }, { cls: "secondary" }),
+    mayorPower && text(rules().mayorUses === "once" ? t("mayorPowerOnce") : t("mayorPowerEvery"), "muted small"),
     isDead(uid) && text(t("deadNoVote"), "muted small"),
     hostTools(action(t("forceClose"), () => {
       if (confirm(t("confirmForceClose"))) run(closeVoteNow)();
@@ -1017,7 +1047,8 @@ function renderLog() {
     if (e.runoff) return el("li", {}, t("logRunoff", e.round, listNames(e.runoff)));
     const votes = e.votes != null ? ` (${t("votes", e.votes)})` : "";
     return el("li", {}, t("logDay", e.round),
-      e.eliminated ? [t("logEliminated"), el("strong", {}, playerName(e.eliminated)), votes, e.drawn ? t("logDrawn") : ""] : t("logNoElim"));
+      e.eliminated ? [e.mayor ? t("logDecree", playerName(e.mayor)) : t("logEliminated"), el("strong", {}, playerName(e.eliminated)),
+        e.mayor ? "" : votes, e.drawn ? t("logDrawn") : ""] : t("logNoElim"));
   }));
   $("#card-log").hidden = false;
 }
@@ -1398,6 +1429,7 @@ function startNight() {
     [gamePath("vote")]: null,
     [`lobbies/${code}/votes`]: null,
     [`lobbies/${code}/nightDone`]: null,
+    [`lobbies/${code}/decree`]: null,
     [`secrets/${code}/wolfVotes`]: null,
     [`secrets/${code}/actions`]: null,
     // marks the secrets as belonging to this night (see secretsFresh)
@@ -1523,16 +1555,34 @@ function applyVoteResult(result) {
   }
   const eliminated = result.eliminated || null;
   const drawn = result.drawn || null;
-  const entry = { type: "vote", round: g.round, ballot: vote.ballot, eliminated, drawn, votes: result.counts?.[eliminated] };
+  const mayor = result.mayor || null;
+  const entry = { type: "vote", round: g.round, ballot: vote.ballot, eliminated, drawn, mayor, votes: result.counts?.[eliminated] };
+  if (mayor) {
+    updates[gamePath("mayorUsed")] = true;
+    updates[gamePath("mayor")] = mayor; // everyone now knows who the mayor is
+  }
+  updates[`lobbies/${code}/decree`] = null;
   const won = outcome(updates, entry, eliminated, "vote");
-  if (!won) updates[gamePath("vote")] = compact({ ballot: vote.ballot, done: true, eliminated, drawn });
+  if (!won) updates[gamePath("vote")] = compact({ ballot: vote.ballot, done: true, eliminated, drawn, mayor });
   return update(ref(db), updates);
+}
+
+/** Phone vote: as soon as the mayor confirms their decision, it closes the vote. */
+function applyDecree() {
+  const g = game();
+  if (g?.phase !== "day" || g.vote?.done || !secrets) return;
+  const [[by, target] = []] = Object.entries(lobby.decree || {});
+  if (!by || secrets.roles?.[by] !== "mayor" || !mayorCanDecide(rules(), g.mayorUsed)) return;
+  const key = `${g.round}:${g.vote?.ballot}:${by}`;
+  if (decreeKey === key) return;
+  decreeKey = key;
+  applyVoteResult({ eliminated: target, mayor: by }).catch(() => { decreeKey = null; });
 }
 
 function endGame() {
   return update(ref(db), {
     [`secrets/${code}`]: null, [`lobbies/${code}/game`]: null, [`lobbies/${code}/votes`]: null, [`lobbies/${code}/seen`]: null,
-    [`lobbies/${code}/nightDone`]: null,
+    [`lobbies/${code}/nightDone`]: null, [`lobbies/${code}/decree`]: null,
   });
 }
 

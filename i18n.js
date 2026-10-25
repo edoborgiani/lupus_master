@@ -8,11 +8,11 @@ export const LANGS = ["it", "en"];
 const ROLE_NAMES = {
   it: {
     wolf: ["Lupo", "Lupi"], seer: ["Veggente", "Veggenti"], magician: ["Mago", "Maghi"],
-    medium: ["Medium", "Medium"], mason: ["Massone", "Massoni"], prole: ["Prole", "Prole"], citizen: ["Cittadino", "Cittadini"],
+    medium: ["Medium", "Medium"], mason: ["Massone", "Massoni"], prole: ["Prole", "Prole"], mayor: ["Sindaco", "Sindaci"], citizen: ["Cittadino", "Cittadini"],
   },
   en: {
     wolf: ["Wolf", "Wolves"], seer: ["Seer", "Seers"], magician: ["Magician", "Magicians"],
-    medium: ["Medium", "Mediums"], mason: ["Mason", "Masons"], prole: ["Cursed", "Cursed"], citizen: ["Citizen", "Citizens"],
+    medium: ["Medium", "Mediums"], mason: ["Mason", "Masons"], prole: ["Cursed", "Cursed"], mayor: ["Mayor", "Mayors"], citizen: ["Citizen", "Citizens"],
   },
 };
 
@@ -31,6 +31,7 @@ const ROLE_DESC = {
     prole: (r) => "Sembri un semplice abitante del villaggio, ma se i lupi ti attaccano non muori: diventi uno di loro e da quel momento giochi con il branco."
       + (r.proleKnows ? "" : " In questa partita la Prole non sa di esserlo: il suo telefono mostra Cittadino finché non viene morsa.")
       + (r.seerSeesProle === "wolf" ? " Il veggente ti vede già come un lupo." : ""),
+    mayor: (r) => `Sei un abitante del villaggio con un potere: durante la votazione puoi decidere da solo chi viene eliminato, ${r.mayorUses === "once" ? "una sola volta per partita" : "ogni giorno"}. Quando lo usi, tutti scoprono che sei il sindaco.`,
     citizen: () => "Sei un semplice abitante del villaggio. Di giorno discuti e vota per scoprire ed eliminare i lupi.",
   },
   en: {
@@ -46,6 +47,7 @@ const ROLE_DESC = {
     prole: (r) => "You look like an ordinary villager, but if the wolves attack you, you don't die: you become one of them and from then on you play with the pack."
       + (r.proleKnows ? "" : " In this game the Cursed doesn't know it: their phone shows Citizen until they are bitten.")
       + (r.seerSeesProle === "wolf" ? " The seer already sees you as a wolf." : ""),
+    mayor: (r) => `You are a villager with a power: during the vote you can decide alone who is eliminated, ${r.mayorUses === "once" ? "once per game" : "every day"}. When you use it, everyone learns you are the mayor.`,
     citizen: () => "You are an ordinary villager. During the day, discuss and vote to find and eliminate the wolves.",
   },
 };
@@ -59,6 +61,7 @@ const ROLE_INFO = {
     medium: "Non puoi visitare te stesso. Se il mago protegge la casa che visiti, vi salvate entrambi.",
     mason: "Di giorno potete garantire l'uno per l'altro, ma attenzione: se vi esponete troppo, i lupi sapranno chi colpire.",
     prole: "Finché non vieni morso giochi per il villaggio. Se vieni morso, il tuo telefono te lo dice e il branco ti accoglie: da lì in poi vinci con i lupi. Al villaggio si annuncia che quella notte nessuno è morto.",
+    mayor: "Scegli bene il momento: una decisione sbagliata elimina un innocente, e da quel momento i lupi sanno chi sei.",
     citizen: "Non hai poteri notturni, ma il tuo voto conta: osserva, ascolta e smaschera i lupi.",
   },
   en: {
@@ -68,6 +71,7 @@ const ROLE_INFO = {
     medium: "You can't visit yourself. If the magician protects the house you visit, you are both safe.",
     mason: "During the day you can vouch for each other, but careful: if you expose yourselves too much, the wolves will know who to strike.",
     prole: "Until you're bitten you play for the village. If you're bitten, your phone tells you and the pack welcomes you: from then on you win with the wolves. The village is told that nobody died that night.",
+    mayor: "Pick your moment: a wrong decision eliminates an innocent, and from then on the wolves know who you are.",
     citizen: "You have no night powers, but your vote counts: watch, listen and unmask the wolves.",
   },
 };
@@ -137,6 +141,13 @@ const STRINGS = {
     confirmPick: (n) => `Conferma: ${n}`, confirmVote: (n) => `Conferma il voto: ${n}`,
     decoyPrompt: "Stanotte non hai azioni, ma scegli comunque un giocatore e conferma: chi sospetti? La scelta non cambia nulla, serve solo a non far capire a nessuno chi ha un ruolo.",
     nightDoneCount: (k, n) => `Hanno confermato ${k} giocatori su ${n}.`,
+    mayorPower: "Usa il potere del sindaco", mayorPowerOnce: "Puoi decidere tu chi viene eliminato, una sola volta per partita. Tutti sapranno che sei il sindaco.",
+    mayorPowerEvery: "Puoi decidere tu chi viene eliminato oggi. Tutti sapranno che sei il sindaco.",
+    decreePrompt: "Scegli chi viene eliminato. La tua decisione chiude subito la votazione e rivela a tutti che sei il sindaco.",
+    confirmDecree: (n) => `Conferma: il sindaco elimina ${n}`, decreeBy: (m, n) => `Il sindaco ${m} ha deciso: viene eliminato ${n}.`,
+    decreeLiveButton: (m) => `Decide il sindaco (${m})`, decreeLive: (m) => `${m} si dichiara sindaco: tocca il giocatore che sceglie.`,
+    logDecree: (m) => `il sindaco ${m} elimina `,
+    rule_mayorUses: "Il sindaco può decidere la votazione…", opt_mayorUses_once: "una volta per partita", opt_mayorUses_every: "ogni giorno",
     suspectsTitle: "Chi ha indovinato i sospetti?",
     suspectsNote: "Le notti senza azioni: quante volte il sospettato era davvero un lupo. Non ha cambiato nulla nella partita.",
     suspectsScore: (k, n) => `${k} su ${n}`,
@@ -327,6 +338,13 @@ const STRINGS = {
     confirmPick: (n) => `Confirm: ${n}`, confirmVote: (n) => `Confirm vote: ${n}`,
     decoyPrompt: "You have no action tonight, but pick a player anyway and confirm: who do you suspect? It changes nothing, it only keeps anyone from telling who has a role.",
     nightDoneCount: (k, n) => `${k} of ${n} players have confirmed.`,
+    mayorPower: "Use the mayor's power", mayorPowerOnce: "You can decide alone who is eliminated, once per game. Everyone will learn you are the mayor.",
+    mayorPowerEvery: "You can decide alone who is eliminated today. Everyone will learn you are the mayor.",
+    decreePrompt: "Choose who is eliminated. Your decision closes the vote at once and reveals to everyone that you are the mayor.",
+    confirmDecree: (n) => `Confirm: the mayor eliminates ${n}`, decreeBy: (m, n) => `Mayor ${m} decided: ${n} is eliminated.`,
+    decreeLiveButton: (m) => `The mayor decides (${m})`, decreeLive: (m) => `${m} declares they are the mayor: tap the player they choose.`,
+    logDecree: (m) => `mayor ${m} eliminates `,
+    rule_mayorUses: "The mayor can decide the vote…", opt_mayorUses_once: "once per game", opt_mayorUses_every: "every day",
     suspectsTitle: "Who got the suspects right?",
     suspectsNote: "On nights without an action: how often the suspect really was a wolf. It changed nothing in the game.",
     suspectsScore: (k, n) => `${k} of ${n}`,
@@ -523,6 +541,7 @@ const GUIDE = {
         <li>In caso di <strong>pareggio</strong> si fa un <strong>ballottaggio</strong> solo tra i giocatori a pari voti.</li>
         <li>Se anche il ballottaggio finisce in pareggio, ${r.secondTie === "random"
           ? "<strong>si estrae a sorte</strong> uno dei giocatori a pari voti." : "quel giorno <strong>nessuno viene eliminato</strong>."}</li>
+        <li>Se in partita c'è il <strong>Sindaco</strong>, può decidere da solo chi viene eliminato (${r.mayorUses === "once" ? "una volta per partita" : "ogni giorno"}): così si rivela a tutti.</li>
       </ul>
       <p>Chi è fuori gioco non parla e non vota. ${{
         none: "I ruoli si scoprono solo a fine partita.",
@@ -604,6 +623,7 @@ const GUIDE = {
         <li>On a <strong>tie</strong> there is a <strong>run-off</strong> only between the tied players.</li>
         <li>If the run-off is tied too, ${r.secondTie === "random"
           ? "<strong>one of the tied players is drawn at random</strong>." : "<strong>nobody is eliminated</strong> that day."}</li>
+        <li>If the game has a <strong>Mayor</strong>, they can decide alone who is eliminated (${r.mayorUses === "once" ? "once per game" : "every day"}): doing so reveals them to everyone.</li>
       </ul>
       <p>Players who are out don't talk and don't vote. ${{
         none: "Roles are only revealed at the end of the game.",
