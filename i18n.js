@@ -20,7 +20,7 @@ const ROLE_NAMES = {
 const ROLE_DESC = {
   it: {
     wolf: (r) => `Ogni notte i lupi scelgono insieme un giocatore da uccidere${r.firstNightKill ? "" : " (la prima notte vi riconoscete soltanto)"}. `
-      + `Vincete quando i lupi sono ${r.wolvesWin === "majority" ? "più" : "tanti quanti"} degli altri.`,
+      + `Vincete quando i lupi sono ${r.wolvesWin === "majority" ? "più degli altri" : "tanti quanti gli altri"}.`,
     seer: (r) => `${r.seerUses === "once" ? "Una sola volta per partita, nella notte che scegli tu," : "Ogni notte"} indichi un giocatore e scopri ${r.seerSees === "role" ? "il suo ruolo esatto" : "se è un lupo oppure no"}.`,
     magician: (r) => `Ogni notte proteggi la casa di un giocatore${r.magicianSelf ? " (anche la tua)" : " (non la tua)"}: nessuno al suo interno può essere ucciso quella notte.`
       + (r.magicianRepeat ? "" : " Non puoi proteggere la stessa casa due notti di fila."),
