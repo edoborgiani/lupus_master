@@ -22,6 +22,7 @@ export const DEFAULT_RULES = {
   magicianSelf: false,      // the magician may protect their own house
   magicianRepeat: true,     // the magician may protect the same house two nights in a row
   mediumAwayDies: true,     // wolves attack the medium's own house while the medium is visiting elsewhere: the medium dies
+  mediumWolfHouse: false,   // the medium who visits a wolf's house dies there (so a night can have two victims)
   secondTie: "none",        // tie in the run-off: "none" eliminated, or "random" among the tied
   selfVote: false,          // players may vote for themselves
   reveal: "none",           // roles revealed when leaving the game: "none", "voted" (only by vote), "all"
@@ -137,6 +138,8 @@ export function seerVision(roles, target, rules, cursed = {}) {
  * - The magician protects a house: nobody in it dies (the medium too, if visiting).
  * - If the wolves attack the house the medium is visiting, the medium dies instead.
  * - If the wolves attack the medium's own house while the medium is away, the rules decide.
+ * - House rule: a medium who visits a wolf's house dies there (`extra`), unless the magician protects that house.
+ *   With the wolves' own victim, that makes two deaths in one night (`victims`).
  */
 export function resolveNight(roles, alive, wolfVotes = {}, actions = {}, { rules, round = 1, lastProtected = null, cursed = {} } = {}) {
   const r = withDefaults(rules);
@@ -156,7 +159,12 @@ export function resolveNight(roles, alive, wolfVotes = {}, actions = {}, { rules
   else if (target && target === medium && visitedId && !r.mediumAwayDies) reason = "medium-away";
   else if (target && isProle(roles, target, cursed)) reason = "converted"; // the bite turns the prole into a wolf
   else if (target) { victim = target; reason = "killed"; }
-  return { attacked: target, protected: protectedId, visited: visitedId, victim, reason, converted: reason === "converted" ? target : null };
+  const atWolf = r.mediumWolfHouse && visitedId && roles[visitedId] === "wolf" && visitedId !== protectedId;
+  const extra = atWolf && victim !== medium ? medium : null;
+  return {
+    attacked: target, protected: protectedId, visited: visitedId, victim, reason, converted: reason === "converted" ? target : null,
+    extra, victims: [victim, extra].filter(Boolean),
+  };
 }
 
 // ---------- day ----------

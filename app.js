@@ -54,7 +54,7 @@ const RULE_GROUPS = [
   ["wolf", ["firstNightKill", "wolvesWin"]],
   ["seer", ["seerSees", "seerUses"]],
   ["magician", ["magicianSelf", "magicianRepeat"]],
-  ["medium", ["mediumAwayDies"]],
+  ["medium", ["mediumAwayDies", "mediumWolfHouse"]],
   ["mason", ["masonsWake"]],
   ["prole", ["proleKnows", "seerSeesProle"]],
   ["vote", ["secondTie", "selfVote", "reveal", "hybridVote"]],
@@ -165,7 +165,13 @@ const visionText = (v) => (v.role ? t("isRole", playerName(v.target), roleName(v
   : v.wolf ? t("isWolf", playerName(v.target)) : t("notWolf", playerName(v.target)));
 const formatCounts = (counts) => ROLE_ORDER.filter((r) => counts[r] > 0)
   .map((r) => `${counts[r]} ${roleName(r, counts[r])}`).join(" · ");
-const describeNight = (res) => t(`res_${res.reason}`, playerName(res.reason === "killed" ? res.victim : res.attacked));
+const describeNight = (res) => t(`res_${res.reason}`, playerName(res.reason === "killed" ? res.victim : res.attacked))
+  + (res.extra ? ` ${t("res_wolfHouse", playerName(res.extra), playerName(res.visited))}` : "");
+/** What the master alone should know about a night (a plain kill needs no explanation). */
+const nightSecret = (res) => res && res.reason !== "pending" && (res.reason !== "killed" || res.extra);
+/** Who died during a night: the wolves' victim and, with the house rule, a medium who visited a wolf. */
+const nightDeaths = (e) => [e?.victim, e?.victim2].filter(Boolean);
+const andList = (ids) => ids.map(playerName).join(t("and"));
 
 // ---------- screens ----------
 
@@ -685,8 +691,9 @@ function liveNight() {
   const res = resolveNightFromSecrets(g.round);
   return phaseCard("night", title, progress,
     say(t("sayDawn")),
-    el("p", { class: "big-news" }, uiIcon(res.victim ? "skull" : "dawn"), res.victim ? t("victimBig", playerName(res.victim)) : t("nobodyBig")),
-    res.reason !== "killed" && secretNote(t("onlyForYou", describeNight(res))),
+    el("p", { class: "big-news" }, uiIcon(res.victims.length ? "skull" : "dawn"),
+      res.victims.length ? t(res.victims.length > 1 ? "victimsBig" : "victimBig", andList(res.victims)) : t("nobodyBig")),
+    nightSecret(res) && secretNote(t("onlyForYou", describeNight(res))),
     action(t("announceDay"), run(resolveNightNow)),
     back);
 }
@@ -884,10 +891,14 @@ const bittenNews = () => el("p", { class: "news death with-icon" }, roleIcon("wo
 function nightNews() {
   const g = game();
   const night = logEntries().find((e) => e.type === "night" && e.round === g.round);
-  const shown = night?.victim && g.revealed?.[night.victim];
+  const deaths = nightDeaths(night);
+  const shown = (id) => g.revealed?.[id];
+  const news = deaths.length === 1
+    ? t("newsVictim", playerName(deaths[0])) + (shown(deaths[0]) ? t("wasRole", roleName(shown(deaths[0]))) : "")
+    : t("newsVictims", deaths.map((id) => playerName(id) + (shown(id) ? ` (${roleName(shown(id))})` : "")).join(t("and")));
   return [
-    el("p", { class: "news with-icon" + (night?.victim ? " death" : "") }, uiIcon(night?.victim ? "skull" : "dawn"),
-      night?.victim ? t("newsVictim", playerName(night.victim)) + (shown ? t("wasRole", roleName(shown)) : "") : t("newsNobody")),
+    el("p", { class: "news with-icon" + (deaths.length ? " death" : "") }, uiIcon(deaths.length ? "skull" : "dawn"),
+      deaths.length ? news : t("newsNobody")),
     // only on the bitten prole's own phone
     bittenRound === g.round && bittenNews(),
   ];
@@ -997,10 +1008,10 @@ function renderLog() {
     if (e.type === "night") {
       const detail = nightLog[e.round];
       const secret = [];
-      if (detail && detail.reason !== "killed" && detail.reason !== "pending") secret.push(describeNight(detail));
+      if (nightSecret(detail)) secret.push(describeNight(detail));
       if (detail?.seen) secret.push(t("logSeer", playerName(detail.seen), detail.seenWolf ? t("aWolf") : t("notAWolf")));
       return el("li", {}, t("logNight", e.round),
-        e.victim ? [t("logKilled"), el("strong", {}, playerName(e.victim))] : t("logNoDeath"),
+        nightDeaths(e).length ? [t(e.victim2 ? "logDied" : "logKilled"), el("strong", {}, andList(nightDeaths(e)))] : t("logNoDeath"),
         secret.map((s) => el("span", { class: "secret" }, uiIcon("lock"), s)));
     }
     if (e.runoff) return el("li", {}, t("logRunoff", e.round, listNames(e.runoff)));
@@ -1442,10 +1453,10 @@ function conversionUpdates(round, pending = {}, keep = true) {
 }
 
 /** Writes shared by night and vote results: log entry, death, revealed role and the end of the game if someone won. */
-function outcome(updates, entry, victim, how, roles = secrets.roles || {}) {
+function outcome(updates, entry, victims, how, roles = secrets.roles || {}) {
   updates[gamePath(`log/${logEntries().length}`)] = compact(entry);
   const aliveAfter = { ...alive() };
-  if (victim) {
+  for (const victim of [victims].flat().filter(Boolean)) {
     aliveAfter[victim] = false;
     updates[gamePath(`alive/${victim}`)] = false;
     if (revealsRole(rules(), how)) updates[gamePath(`revealed/${victim}`)] = trueRole(roles, victim, cursed());
@@ -1478,7 +1489,7 @@ function resolveNightNow() {
   // the bitten prole joins the pack from now on (in live games this already happened at their step)
   Object.assign(updates, conversionUpdates(g.round));
   const rolesAfter = res.converted ? { ...roles, [res.converted]: "wolf" } : roles;
-  const won = outcome(updates, { type: "night", round: g.round, victim: res.victim }, res.victim, "night", rolesAfter);
+  const won = outcome(updates, { type: "night", round: g.round, victim: res.victims[0], victim2: res.victims[1] }, res.victims, "night", rolesAfter);
   if (won && res.converted) {
     const converted = { ...(secrets.converted || {}), [res.converted]: g.round };
     updates[gamePath("converted")] = converted;

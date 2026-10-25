@@ -25,7 +25,8 @@ const ROLE_DESC = {
     magician: (r) => `Ogni notte proteggi la casa di un giocatore${r.magicianSelf ? " (anche la tua)" : " (non la tua)"}: nessuno al suo interno può essere ucciso quella notte.`
       + (r.magicianRepeat ? "" : " Non puoi proteggere la stessa casa due notti di fila."),
     medium: (r) => "Ogni notte vai a casa di un altro giocatore. Se i lupi attaccano quella casa, muori tu al suo posto. "
-      + (r.mediumAwayDies ? "Se attaccano casa tua mentre sei fuori, muori comunque." : "Se attaccano casa tua mentre sei fuori, ti salvi."),
+      + (r.mediumAwayDies ? "Se attaccano casa tua mentre sei fuori, muori comunque." : "Se attaccano casa tua mentre sei fuori, ti salvi.")
+      + (r.mediumWolfHouse ? " Attento: se vai a casa di un lupo, muori." : ""),
     mason: () => "Sei un massone: conosci gli altri massoni e loro conoscono te. Siete abitanti del villaggio: aiutatevi a scoprire i lupi.",
     prole: (r) => "Sembri un semplice abitante del villaggio, ma se i lupi ti attaccano non muori: diventi uno di loro e da quel momento giochi con il branco."
       + (r.proleKnows ? "" : " In questa partita la Prole non sa di esserlo: il suo telefono mostra Cittadino finché non viene morsa.")
@@ -39,7 +40,8 @@ const ROLE_DESC = {
     magician: (r) => `Each night you protect a player's house${r.magicianSelf ? " (yours too)" : " (not your own)"}: nobody in it can be killed that night.`
       + (r.magicianRepeat ? "" : " You can't protect the same house two nights in a row."),
     medium: (r) => "Each night you visit another player's house. If the wolves attack it, you die in their place. "
-      + (r.mediumAwayDies ? "If they attack your own house while you are away, you die anyway." : "If they attack your own house while you are away, you survive."),
+      + (r.mediumAwayDies ? "If they attack your own house while you are away, you die anyway." : "If they attack your own house while you are away, you survive.")
+      + (r.mediumWolfHouse ? " Careful: if you visit a wolf's house, you die." : ""),
     mason: () => "You are a mason: you know the other masons and they know you. You're on the village's side: help each other find the wolves.",
     prole: (r) => "You look like an ordinary villager, but if the wolves attack you, you don't die: you become one of them and from then on you play with the pack."
       + (r.proleKnows ? "" : " In this game the Cursed doesn't know it: their phone shows Citizen until they are bitten.")
@@ -162,7 +164,10 @@ const STRINGS = {
     seerSignalRole: "Mostra al veggente il ruolo in silenzio (ad esempio indicandolo sul telefono).",
     verb_seer: "guarda", verb_magician: "protegge", verb_medium: "va da",
     confirmAction: (verb, n) => `Conferma: ${verb} ${n}`, choosePlayer: "Scegli un giocatore", thenClose: (r) => `Poi: “${r}, chiudi gli occhi.”`,
-    sayDawn: "Sorge il sole. Tutti aprono gli occhi.", victimBig: (n) => `Vittima della notte: ${n}`, nobodyBig: "Stanotte nessuno è morto",
+    sayDawn: "Sorge il sole. Tutti aprono gli occhi.", victimBig: (n) => `Vittima della notte: ${n}`, victimsBig: (n) => `Vittime della notte: ${n}`,
+    newsVictims: (n) => `Vittime della notte: ${n}.`, and: " e ", logDied: "muoiono ",
+    res_wolfHouse: (m, w) => `Inoltre il medium ${m} è andato a casa di ${w}, che è un lupo, e muore.`,
+    rule_mediumWolfHouse: "Il medium muore se va a casa di un lupo", rule_mediumWolfHouse_desc: "Così una notte può avere due vittime. Il mago, proteggendo quella casa, lo salva.", nobodyBig: "Stanotte nessuno è morto",
     onlyForYou: (t) => `Solo per te: ${t}`, announceDay: "Annuncialo e inizia il giorno", back2: "← Indietro",
     liveNight: "Metti via il telefono, chiudi gli occhi e segui la voce del master.", liveNightDead: "Sei fuori gioco: tieni gli occhi chiusi e resta in silenzio.",
     remoteNightIntro: "Tutti chiudono gli occhi. Chi ha un ruolo notturno sceglie dal proprio telefono.",
@@ -348,7 +353,10 @@ const STRINGS = {
     seerSignalRole: "Show the seer the role in silence (for example by pointing at it on the phone).",
     verb_seer: "looks at", verb_magician: "protects", verb_medium: "visits",
     confirmAction: (verb, n) => `Confirm: ${verb} ${n}`, choosePlayer: "Select a player", thenClose: (r) => `Then: “${r}, close your eyes.”`,
-    sayDawn: "The sun rises. Everyone, open your eyes.", victimBig: (n) => `Tonight's victim: ${n}`, nobodyBig: "Nobody died tonight",
+    sayDawn: "The sun rises. Everyone, open your eyes.", victimBig: (n) => `Tonight's victim: ${n}`, victimsBig: (n) => `Tonight's victims: ${n}`,
+    newsVictims: (n) => `Tonight's victims: ${n}.`, and: " and ", logDied: "died: ",
+    res_wolfHouse: (m, w) => `Also, the medium ${m} visited ${w}, who is a wolf, and dies.`,
+    rule_mediumWolfHouse: "The medium dies if they visit a wolf's house", rule_mediumWolfHouse_desc: "So a night can have two victims. The magician saves them by protecting that house.", nobodyBig: "Nobody died tonight",
     onlyForYou: (t) => `Only for you: ${t}`, announceDay: "Announce it and start the day", back2: "← Back",
     liveNight: "Put your phone away, close your eyes and follow the master's voice.", liveNightDead: "You are out: keep your eyes closed and stay silent.",
     remoteNightIntro: "Everyone closes their eyes. Players with a night role choose on their phone.",
@@ -502,7 +510,8 @@ const GUIDE = {
         <li>Se i lupi attaccano <strong>la Prole</strong>, non muore: <strong>diventa un lupo</strong> e da quel momento gioca con il branco.${r.proleKnows
           ? " Dal vivo, prima dell'alba il master chiama la Prole e le fa il pollice in su se è stata morsa."
           : " La Prole non sa di esserlo: dal vivo, prima dell'alba tutti riguardano il proprio ruolo sul telefono."}</li>
-        <li>Altrimenti muore la vittima dei lupi.</li>
+        <li>Altrimenti muore la vittima dei lupi.</li>${r.mediumWolfHouse
+          ? "\n        <li>Se il medium va <strong>a casa di un lupo</strong>, muore anche lui (a meno che il mago protegga quella casa): quella notte i morti possono essere due.</li>" : ""}
       </ul>
       <p>Il master annuncia solo chi è morto, non il perché.${r.reveal === "all" ? " Il ruolo della vittima viene rivelato a tutti." : ""}</p>
     </section>
@@ -582,7 +591,8 @@ const GUIDE = {
         <li>If the wolves attack <strong>the Cursed</strong>, they don't die: <strong>they become a wolf</strong> and from then on play with the pack.${r.proleKnows
           ? " In live games, before dawn the master calls the Cursed and gives them a thumbs up if they were bitten."
           : " The Cursed doesn't know it: in live games, before dawn everyone looks at their role on their phone again."}</li>
-        <li>Otherwise the wolves' victim dies.</li>
+        <li>Otherwise the wolves' victim dies.</li>${r.mediumWolfHouse
+          ? "\n        <li>If the medium visits <strong>a wolf's house</strong>, they die too (unless the magician protects that house): that night there can be two deaths.</li>" : ""}
       </ul>
       <p>The master only announces who died, not why.${r.reveal === "all" ? " The victim's role is revealed to everyone." : ""}</p>
     </section>
