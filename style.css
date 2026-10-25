@@ -163,7 +163,10 @@ code { background: var(--bg-2); padding: 1px 6px; border-radius: 6px; font-size:
 .role-reveal[aria-expanded="true"] .role-shown { display: flex; }
 .role-reveal[aria-expanded="true"] { border-style: solid; border-color: var(--accent-2); }
 .role-reveal.team-wolves[aria-expanded="true"] { border-color: var(--accent); }
-.role-shown .role-icon { font-size: 3.5rem; line-height: 1; }
+.role-shown .role-icon { font-size: 3.5rem; line-height: 1; display: flex; align-items: center; gap: 10px; }
+.role-reveal.out { filter: grayscale(1); }
+.role-reveal.out .role-shown strong { color: var(--muted); }
+.role-shown .role-icon .skull-big { width: 48px; height: 48px; margin: 0; }
 .role-shown strong { font-size: 1.6rem; font-family: Georgia, "Times New Roman", serif; }
 .role-shown > span:not(.role-icon) { color: var(--muted); font-size: .95rem; }
 .role-pack:empty { display: none; }

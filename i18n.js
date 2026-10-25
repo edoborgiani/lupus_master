@@ -114,7 +114,7 @@ const STRINGS = {
     err_noWolf: "Serve almeno un lupo.", err_tooManyWolves: (m, n) => `I lupi devono partire in minoranza: al massimo ${m} con ${n} giocatori.`,
     err_tooManyRoles: "Ci sono più ruoli che giocatori.", notEnough: "Non ci sono abbastanza giocatori.",
     // roles card
-    outSuffix: " (fuori gioco)", yourPack: (n) => `Il tuo branco: ${n}`, onlyWolf: "Sei l'unico lupo.",
+    yourPack: (n) => `Il tuo branco: ${n}`, onlyWolf: "Sei l'unico lupo.",
     yourVisions: (v) => `Le tue visioni: ${v}`, nightN: (r) => `notte ${r}`, inThisGame: (c) => `In questa partita: ${c}`,
     isWolf: (n) => `${n} è un lupo!`, notWolf: (n) => `${n} non è un lupo.`, isRole: (n, r) => `${n} è: ${r}`,
     // assigned
@@ -302,7 +302,7 @@ const STRINGS = {
     fillRest: "Fill the remaining places", max: (n) => `Max ${n}`, fewer: (r) => `Fewer ${r}`, more: (r) => `More ${r}`,
     err_noWolf: "There must be at least one wolf.", err_tooManyWolves: (m, n) => `Wolves must start as a minority: at most ${m} with ${n} players.`,
     err_tooManyRoles: "More roles than players.", notEnough: "Not enough players.",
-    outSuffix: " (out)", yourPack: (n) => `Your pack: ${n}`, onlyWolf: "You are the only wolf.",
+    yourPack: (n) => `Your pack: ${n}`, onlyWolf: "You are the only wolf.",
     yourVisions: (v) => `Your visions: ${v}`, nightN: (r) => `night ${r}`, inThisGame: (c) => `In this game: ${c}`,
     isWolf: (n) => `${n} is a wolf!`, notWolf: (n) => `${n} is not a wolf.`, isRole: (n, r) => `${n} is: ${r}`,
     rolesDealt: "Roles dealt",

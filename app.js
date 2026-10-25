@@ -471,8 +471,9 @@ function renderMyRole() {
   const btn = $("#btn-reveal");
   btn.setAttribute("aria-expanded", String(revealed));
   btn.classList.toggle("team-wolves", role.team === "wolves");
-  $("#role-icon").replaceChildren(roleIcon(myRole, "ri-big"));
-  $("#role-name").textContent = roleName(myRole) + (isDead(uid) ? t("outSuffix") : "");
+  btn.classList.toggle("out", isDead(uid)); // out of the game: the card turns grey, with a skull by the icon
+  $("#role-icon").replaceChildren(roleIcon(myRole, "ri-big"), ...(isDead(uid) ? [uiIcon("skull", { class: "ri skull-big" })] : []));
+  $("#role-name").textContent = roleName(myRole);
   $("#role-desc").textContent = roleDesc(myRole, rules());
   let extra = "";
   if (myRole === "wolf" && pack) {
