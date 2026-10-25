@@ -85,6 +85,8 @@ const STRINGS = {
     modeTitle: "Modalità di gioco", modeLive: "Dal vivo", modeRemote: "A distanza",
     modeLiveDesc: "Tutti allo stesso tavolo. I telefoni mostrano solo i ruoli; il master registra la notte e la votazione.",
     modeRemoteDesc: "Ognuno gioca dal proprio telefono: azioni notturne e voti avvengono nell'app.",
+    modeHybrid: "Ibrido",
+    modeHybridDesc: "Tutti allo stesso tavolo con un master che guida la notte, ma chi viene chiamato apre gli occhi e sceglie dal proprio telefono. Il voto si fa per alzata di mano o sul telefono, come scegli nelle impostazioni.",
     liveNeedsMaster: "Le partite dal vivo hanno bisogno di un master.",
     settingsTitle: "Impostazioni", language: "Lingua", roomRules: "Regole della stanza", close: "Chiudi",
     rulesEditable: "Valgono per tutti nella stanza. Puoi cambiarle finché la partita non inizia.",
@@ -121,6 +123,18 @@ const STRINGS = {
     masterAssignedRemote: "Chiedi a tutti di guardare il proprio ruolo di nascosto. Quando tutti l'hanno visto, inizia la prima notte.",
     playerAssignedLive: "Guarda il tuo ruolo qui sotto senza farlo vedere a nessuno, poi metti via il telefono: il master guida la partita a voce.",
     playerAssignedRemote: "Guarda il tuo ruolo qui sotto senza farlo vedere a nessuno. La prima notte sta per iniziare.",
+    playerAssignedHybrid: "Guarda il tuo ruolo qui sotto senza farlo vedere a nessuno. Tieni il telefono a portata di mano: quando il master chiama il tuo ruolo, scegli da qui.",
+    hybridNight: "Chiudi gli occhi e segui la voce del master. Quando chiama il tuo ruolo, apri gli occhi e scegli da qui.",
+    sayWolvesHybrid: "Lupi, aprite gli occhi… e scegliete la vittima sul telefono.",
+    sayHybrid_seer: "Veggente, apri gli occhi… e scegli sul telefono chi vuoi scoprire.",
+    sayHybrid_magician: "Mago, apri gli occhi… e scegli sul telefono la casa da proteggere.",
+    sayHybrid_medium: "Medium, apri gli occhi… e scegli sul telefono la casa da visitare.",
+    waitPhone: "In attesa della scelta sul telefono…", skipStep: "Non risponde? Vai avanti senza scelta",
+    confirmSkipStep: "Andare avanti senza la sua scelta? Vale come nessuna azione.",
+    pickConfirmed: (n) => `Hai confermato: ${n}.`, pickDone: "Hai confermato la tua scelta.", changePick: "Cambia scelta",
+    confirmPick: (n) => `Conferma: ${n}`, confirmVote: (n) => `Conferma il voto: ${n}`,
+    decoyPrompt: "Stanotte non hai azioni, ma scegli comunque un giocatore e conferma: chi sospetti? La scelta non cambia nulla, serve solo a non far capire a nessuno chi ha un ruolo.",
+    nightDoneCount: (k, n) => `Hanno confermato ${k} giocatori su ${n}.`,
     seenCount: (k, n) => `${k} su ${n} hanno visto il proprio ruolo.`, seenAll: "Tutti hanno visto il proprio ruolo.",
     seenLegendYes: "ha visto il ruolo", seenLegendNo: "non ancora", seenYes: "Ha visto il ruolo", seenNo: "Non ha ancora visto il ruolo",
     startNight: (r) => `Inizia la notte ${r}`, waitSeen: "Aspetta che tutti abbiano visto il proprio ruolo",
@@ -131,6 +145,7 @@ const STRINGS = {
     saySleep: "Scende la notte sul villaggio. Tutti chiudono gli occhi.", callWolves: "Avanti: chiama i lupi",
     sayWolves: "Lupi, aprite gli occhi… e scegliete la vostra vittima.", sayWolvesFirst: "Lupi, aprite gli occhi e riconoscetevi.",
     wolvesAre: (n, names) => `${n === 1 ? "Il lupo è" : "I lupi sono"} ${names}. Tocca il giocatore che indicano:`,
+    wolvesAreHybrid: (n, names) => `${n === 1 ? "Il lupo è" : "I lupi sono"} ${names}: ${n === 1 ? "sceglie" : "scelgono"} sul telefono.`,
     wolvesFirstNight: (names) => `I lupi (${names}) si guardano e si riconoscono. La prima notte non uccidono.`,
     confirmAttack: (n) => `Conferma: i lupi attaccano ${n}`, chooseVictim: "Scegli la vittima", continue: "Continua",
     thenWolves: "Poi: “Lupi, chiudete gli occhi.”",
@@ -232,6 +247,7 @@ const STRINGS = {
     checkBitten: (n) => `${n} era la Prole ed è stato morso: ora sul suo telefono è un lupo e dalla prossima notte si sveglia con il branco.`,
     checkNobody: "Stanotte nessuno è diventato un lupo.",
     thenCheck: "Quando tutti hanno guardato e rimesso giù il telefono, continua.",
+    rule_hybridVote: "In modalità ibrida, il voto del giorno si fa…", opt_hybridVote_hands: "per alzata di mano", opt_hybridVote_phones: "sul telefono",
     rule_proleKnows: "La Prole sa di essere la Prole", rule_proleKnows_desc: "Se disattivato, il suo telefono mostra Cittadino finché non viene morsa.",
     step_masons: "Massoni", sayMasons: "Massoni, aprite gli occhi e riconoscetevi.",
     masonsAre: (n) => `I massoni sono ${n}. Lasciali guardarsi, poi continua.`,
@@ -257,6 +273,8 @@ const STRINGS = {
     modeTitle: "Way of playing", modeLive: "Live", modeRemote: "Remote",
     modeLiveDesc: "Everyone at the same table. Phones only show the roles; the master records the night and the vote.",
     modeRemoteDesc: "Everyone plays on their own phone: night actions and votes happen in the app.",
+    modeHybrid: "Hybrid",
+    modeHybridDesc: "Everyone at the same table with a master running the night, but whoever is called opens their eyes and chooses on their own phone. The vote is by show of hands or on the phones, as chosen in the settings.",
     liveNeedsMaster: "Live games need a game master.",
     settingsTitle: "Settings", language: "Language", roomRules: "Room rules", close: "Close",
     rulesEditable: "They apply to everyone in the room. You can change them until the game starts.",
@@ -289,6 +307,18 @@ const STRINGS = {
     masterAssignedRemote: "Ask everyone to check their role in secret. Once everyone has seen it, start the first night.",
     playerAssignedLive: "Check your role below without letting anyone see it, then put your phone away: the master runs the game out loud.",
     playerAssignedRemote: "Check your role below without letting anyone see it. The first night starts soon.",
+    playerAssignedHybrid: "Check your role below without letting anyone see it. Keep your phone at hand: when the master calls your role, choose here.",
+    hybridNight: "Close your eyes and follow the master's voice. When your role is called, open your eyes and choose here.",
+    sayWolvesHybrid: "Wolves, open your eyes… and choose your victim on your phone.",
+    sayHybrid_seer: "Seer, open your eyes… and choose on your phone who to find out about.",
+    sayHybrid_magician: "Magician, open your eyes… and choose on your phone whose house to protect.",
+    sayHybrid_medium: "Medium, open your eyes… and choose on your phone whose house to visit.",
+    waitPhone: "Waiting for the choice on the phone…", skipStep: "No answer? Continue without a choice",
+    confirmSkipStep: "Continue without their choice? It counts as no action.",
+    pickConfirmed: (n) => `You confirmed: ${n}.`, pickDone: "You confirmed your choice.", changePick: "Change choice",
+    confirmPick: (n) => `Confirm: ${n}`, confirmVote: (n) => `Confirm vote: ${n}`,
+    decoyPrompt: "You have no action tonight, but pick a player anyway and confirm: who do you suspect? It changes nothing, it only keeps anyone from telling who has a role.",
+    nightDoneCount: (k, n) => `${k} of ${n} players have confirmed.`,
     seenCount: (k, n) => `${k} of ${n} have seen their role.`, seenAll: "Everyone has seen their role.",
     seenLegendYes: "has seen their role", seenLegendNo: "not yet", seenYes: "Has seen their role", seenNo: "Hasn't seen their role yet",
     startNight: (r) => `Start night ${r}`, waitSeen: "Wait until everyone has seen their role",
@@ -298,6 +328,7 @@ const STRINGS = {
     saySleep: "Night falls on the village. Everyone, close your eyes.", callWolves: "Next: call the wolves",
     sayWolves: "Wolves, open your eyes… and choose your victim.", sayWolvesFirst: "Wolves, open your eyes and recognise each other.",
     wolvesAre: (n, names) => `${n === 1 ? "The wolf is" : "The wolves are"} ${names}. Tap the player they point at:`,
+    wolvesAreHybrid: (n, names) => `${n === 1 ? "The wolf is" : "The wolves are"} ${names}: they choose on their phone.`,
     wolvesFirstNight: (names) => `The wolves (${names}) look at each other. On the first night they don't kill.`,
     confirmAttack: (n) => `Confirm: the wolves attack ${n}`, chooseVictim: "Select the victim", continue: "Continue",
     thenWolves: "Then: “Wolves, close your eyes.”",
@@ -394,6 +425,7 @@ const STRINGS = {
     checkBitten: (n) => `${n} was the Cursed and was bitten: their phone now shows a wolf, and from the next night they wake up with the pack.`,
     checkNobody: "Nobody became a wolf tonight.",
     thenCheck: "When everyone has looked and put their phone down, continue.",
+    rule_hybridVote: "In hybrid games, the day vote is held…", opt_hybridVote_hands: "by show of hands", opt_hybridVote_phones: "on the phones",
     rule_proleKnows: "The Cursed knows they are the Cursed", rule_proleKnows_desc: "If off, their phone shows Citizen until they are bitten.",
     step_masons: "Masons", sayMasons: "Masons, open your eyes and recognise each other.",
     masonsAre: (n) => `The masons are ${n}. Let them look at each other, then continue.`,
@@ -484,13 +516,16 @@ const GUIDE = {
       }[r.reveal]}</p>
     </section>
     <section>
-      <h3><img class="ri" src="icons/ui/remote.svg" alt=""> Le due modalità</h3>
+      <h3><img class="ri" src="icons/ui/remote.svg" alt=""> Le tre modalità</h3>
       <ul>
         <li><strong><img class="ri" src="icons/ui/live.svg" alt=""> Dal vivo</strong>: tutti allo stesso tavolo, serve un master. Ognuno guarda il proprio ruolo sul telefono
           e lo mette via; il master guida la notte dal suo telefono, registra le scelte indicate col dito, vede chi muore
           all'alba e registra il risultato della votazione.</li>
+        <li><strong><img class="ri" src="icons/ui/hybrid.svg" alt=""> Ibrido</strong>: come dal vivo, ma quando il master chiama un ruolo, quel giocatore apre gli occhi
+          e sceglie dal proprio telefono; il master vede la scelta e va avanti. ${r.hybridVote === "phones" ? "Il voto si fa sul telefono, come a distanza." : "Il voto resta per alzata di mano."}</li>
         <li><strong><img class="ri" src="icons/ui/remote.svg" alt=""> A distanza</strong>: ognuno sceglie e vota dal proprio telefono. Il master è facoltativo: senza master,
-          chi ha creato la stanza (l'host) gioca come gli altri e la partita va avanti da sola.</li>
+          chi ha creato la stanza (l'host) gioca come gli altri e la partita va avanti da sola. Di notte tutti scelgono un giocatore,
+          anche chi non ha azioni, così nessuno capisce chi ha un ruolo. Ogni scelta e ogni voto vanno confermati.</li>
       </ul>
     </section>
     <section>
@@ -561,13 +596,16 @@ const GUIDE = {
       }[r.reveal]}</p>
     </section>
     <section>
-      <h3><img class="ri" src="icons/ui/remote.svg" alt=""> Two ways of playing</h3>
+      <h3><img class="ri" src="icons/ui/remote.svg" alt=""> Three ways of playing</h3>
       <ul>
         <li><strong><img class="ri" src="icons/ui/live.svg" alt=""> Live</strong>: everyone at the same table, a master is needed. Everyone checks their role on their phone
           and puts it away; the master runs the night from their phone, records the choices people point at, sees who dies
           at dawn and records the result of the vote.</li>
+        <li><strong><img class="ri" src="icons/ui/hybrid.svg" alt=""> Hybrid</strong>: like live, but when the master calls a role, that player opens their eyes
+          and chooses on their own phone; the master sees the choice and moves on. ${r.hybridVote === "phones" ? "The vote happens on the phones, as in remote games." : "The vote is still by show of hands."}</li>
         <li><strong><img class="ri" src="icons/ui/remote.svg" alt=""> Remote</strong>: everyone chooses and votes on their own phone. The master is optional: without one,
-          the room's creator (the host) plays like everyone else and the game moves on by itself.</li>
+          the room's creator (the host) plays like everyone else and the game moves on by itself. At night everyone picks a player,
+          even those with no action, so nobody can tell who has a role. Every choice and vote must be confirmed.</li>
       </ul>
     </section>
     <section>

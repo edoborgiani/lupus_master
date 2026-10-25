@@ -26,6 +26,7 @@ export const DEFAULT_RULES = {
   selfVote: false,          // players may vote for themselves
   reveal: "none",           // roles revealed when leaving the game: "none", "voted" (only by vote), "all"
   masonsWake: "first",      // live: the master calls the masons on the "first" night only, or "every" night
+  hybridVote: "hands",      // hybrid games: the day vote by show of "hands" (the master records it) or on "phones"
   proleKnows: true,         // the prole knows their role (false: they believe they are a citizen until bitten)
   seerSeesProle: "village", // before the bite the seer sees the prole as "village" (not a wolf) or "wolf"
 };
@@ -36,6 +37,7 @@ export const RULE_OPTIONS = {
   secondTie: ["none", "random"],
   reveal: ["none", "voted", "all"],
   masonsWake: ["first", "every"],
+  hybridVote: ["hands", "phones"],
   seerSeesProle: ["village", "wolf"],
 };
 export const withDefaults = (rules) => ({ ...DEFAULT_RULES, ...(rules || {}) });

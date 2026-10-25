@@ -1,10 +1,12 @@
 // Lupus in Tabula companion - client (Firebase Realtime Database)
 //
-// Two ways of playing:
+// Three ways of playing:
 // - live:   everyone at the same table. Phones only deal the roles; the master records the night
 //           step by step (who the wolves point at, ...) and the result of the vote.
+// - hybrid: like live, but when the master calls a role, that player chooses on their own phone.
 // - remote: everyone plays on their own phone. The master is optional: without one, the lobby's
 //           host plays normally and the game advances by itself when everyone has acted.
+//           At night everyone picks someone, so nobody can tell who has a role.
 // The "controller" (the master, or the host when there is no master) runs the game.
 //
 // Data layout, one node per lobby (readable by everyone in it):
@@ -18,6 +20,7 @@
 //   lobbies/{CODE}/seen/{uid}         true once the player has looked at their role
 //   lobbies/{CODE}/game               { phase, mode, rules, counts, round, step, alive, vote, log, revealed, winner, reveal }
 //   lobbies/{CODE}/votes/{uid}        remote day vote: uid voted against (public, like pointing)
+//   lobbies/{CODE}/nightDone/{uid}    remote: true once the player has confirmed tonight's pick
 // Secret data, readable only by the controller (and per database.rules.json):
 //   secrets/{CODE}/roles/{uid}        role id; each player can read only their own
 //   secrets/{CODE}/wolves/{uid}       true; readable by wolves so they know their pack
@@ -53,7 +56,7 @@ const RULE_GROUPS = [
   ["medium", ["mediumAwayDies"]],
   ["mason", ["masonsWake"]],
   ["prole", ["proleKnows", "seerSeesProle"]],
-  ["vote", ["secondTie", "selfVote", "reveal"]],
+  ["vote", ["secondTie", "selfVote", "reveal", "hybridVote"]],
 ];
 
 const $ = (sel) => document.querySelector(sel);
@@ -114,6 +117,10 @@ let tieMode = false;
 let autoKey = null;
 let autoTimer = null;
 let visionKey = null;     // seer answer being written, to avoid writing it twice
+// players: a pick waiting for confirmation (reset whenever the step changes), and whether a confirmed pick is being changed
+let pendingSel = null;
+let changing = false;
+let decoyPick = null;     // remote: who this player picked tonight without a night role (only kept on this phone)
 
 const lobbyRef = (...parts) => ref(db, ["lobbies", code, ...parts].join("/"));
 const nameKey = (name) => encodeURIComponent(name.trim().toLowerCase()).replace(/\./g, "%2E");
@@ -130,11 +137,12 @@ const alive = () => game()?.alive || {};
 const logEntries = () => Object.values(game()?.log || {});
 /** Rules in force: frozen in the game once it starts, otherwise the room's settings. */
 const rules = () => withDefaults(game()?.rules || lobby?.settings?.rules);
-/** Way of playing chosen for the room; live needs a master. */
+/** Way of playing chosen for the room; live and hybrid need a master. */
 const roomMode = () => {
   const m = lobby?.settings?.mode || (lobby?.masterId ? "live" : "remote");
-  return m === "live" && !lobby?.masterId ? "remote" : m;
+  return m !== "remote" && !lobby?.masterId ? "remote" : m;
 };
+const MODE_LABELS = { live: "modeLive", hybrid: "modeHybrid", remote: "modeRemote" };
 /** Whether the seer already had a vision before tonight (for the "once per game" rule), from what this phone knows. */
 const seerUsed = (seerId, round) => seerUsedBefore(seerId === uid ? visions : secrets?.visions?.[seerId], round);
 const seerSpent = (seerId, round) => !seerCanLook(rules(), seerUsed(seerId, round));
@@ -267,6 +275,9 @@ function renderGame() {
     liveSel = null;
     tieSel = new Set();
     tieMode = false;
+    pendingSel = null;
+    changing = false;
+    if (phase !== "night") decoyPick = null;
   }
 
   for (const id of ["card-start", "card-wait", "card-setup", "card-phase", "card-role", "card-master-roles", "card-log"]) {
@@ -278,7 +289,7 @@ function renderGame() {
   $("#btn-edit").hidden = !!g;
   $("#btn-leave").hidden = !!g && ctrl;
 
-  const modeLabel = roomMode() === "live" ? t("modeLive") : t("modeRemote");
+  const modeLabel = t(MODE_LABELS[roomMode()]);
   if (!phase) {
     if (ctrl) renderStart(n, master);
     else {
@@ -296,13 +307,12 @@ function renderGame() {
     return;
   }
 
-  const live = g.mode === "live";
+  const remote = g.mode === "remote";
+  const phoneVote = remote || rules().hybridVote === "phones"; // hybrid games may vote on the phones
   if (master) {
     renderMasterRoles();
     if (secrets) {
-      (live
-        ? { assigned: masterAssigned, night: liveNight, day: liveDay, over: renderOver }
-        : { assigned: masterAssigned, night: masterNight, day: renderDay, over: renderOver })[phase]();
+      ({ assigned: masterAssigned, night: remote ? masterNight : liveNight, day: phoneVote && g.mode !== "live" ? renderDay : liveDay, over: renderOver })[phase]();
     }
   } else if (myRole === undefined) {
     wait(t("loadingRole"));
@@ -310,12 +320,14 @@ function renderGame() {
     wait(t("notInGame"));
   } else {
     renderMyRole();
-    (live
-      ? { assigned: playerAssigned, night: livePlayerNight, day: livePlayerDay, over: renderOver }
-      : { assigned: playerAssigned, night: playerNight, day: renderDay, over: renderOver })[phase]();
+    ({
+      live: { assigned: playerAssigned, night: livePlayerNight, day: livePlayerDay, over: renderOver },
+      hybrid: { assigned: playerAssigned, night: hybridPlayerNight, day: phoneVote ? renderDay : livePlayerDay, over: renderOver },
+      remote: { assigned: playerAssigned, night: playerNight, day: renderDay, over: renderOver },
+    })[g.mode][phase]();
   }
   renderLog();
-  if (ctrl && !live) answerSeer();
+  if (ctrl && g.mode !== "live") answerSeer();
   if (isHostOnly()) autoAdvance();
 }
 
@@ -352,6 +364,28 @@ function choiceList(ids, selected, onPick, extra = () => null, right = () => nul
       }, el("span", { class: "pname" }, playerName(id), extra(id)), right(id)))));
 }
 
+/**
+ * A player's pick: tap a name, then confirm. Once confirmed (`current`: the chosen id, or true when this phone
+ * doesn't know who), the list shows the choice, with a link to change it unless `final`.
+ */
+function confirmedChoice(ids, current, confirmLabel, onConfirm, { final = false, extra, right } = {}) {
+  if (current && !changing) {
+    return [
+      choiceList(ids, current, null, extra, right),
+      text(current === true ? t("pickDone") : t("pickConfirmed", playerName(current)), "muted small"),
+      !final && action(t("changePick"), () => { changing = true; pendingSel = current === true ? null : current; renderGame(); }, { cls: "link" }),
+    ];
+  }
+  return [
+    choiceList(ids, pendingSel, (id) => { pendingSel = id; renderGame(); }, extra, right),
+    action(pendingSel ? confirmLabel(pendingSel) : t("choosePlayer"), run(async () => {
+      await onConfirm(pendingSel);
+      changing = false;
+      renderGame();
+    }), { disabled: !pendingSel }),
+  ];
+}
+
 /** Local pick in live mode: just remember it and redraw. */
 function pickLocal(id) {
   liveSel = id;
@@ -365,10 +399,12 @@ function renderStart(n, master) {
   const hasMaster = !!lobby.masterId;
   for (const input of document.querySelectorAll('input[name="mode"]')) {
     input.checked = input.value === roomMode();
-    input.disabled = input.value === "live" && !hasMaster;
+    input.disabled = input.value !== "remote" && !hasMaster;
   }
-  $("#mode-live").classList.toggle("disabled", !hasMaster);
-  $("#mode-live").title = hasMaster ? "" : t("liveNeedsMaster");
+  for (const m of ["live", "hybrid"]) {
+    $(`#mode-${m}`).classList.toggle("disabled", !hasMaster);
+    $(`#mode-${m}`).title = hasMaster ? "" : t("liveNeedsMaster");
+  }
   $("#btn-start").disabled = n < MIN_PLAYERS;
   $("#start-hint").textContent = (n < MIN_PLAYERS ? t("waitingPlayers", n, MIN_PLAYERS) : t("playersReady", n))
     + (master ? "" : t("noMasterRemote"));
@@ -486,7 +522,7 @@ function startFirstNight() {
 }
 
 function masterAssigned() {
-  const live = game().mode === "live";
+  const live = game().mode !== "remote";
   phaseCard("", t("rolesDealt"),
     text(live ? t("masterAssignedLive") : t("masterAssignedRemote")),
     seenStatus(false),
@@ -494,9 +530,9 @@ function masterAssigned() {
 }
 
 function playerAssigned() {
-  const live = game().mode === "live";
+  const mode = game().mode;
   phaseCard("", t("rolesDealt"),
-    text(live ? t("playerAssignedLive") : t("playerAssignedRemote")),
+    text(t({ live: "playerAssignedLive", hybrid: "playerAssignedHybrid", remote: "playerAssignedRemote" }[mode])),
     seenStatus(),
     hostTools(startFirstNight()));
 }
@@ -507,10 +543,11 @@ function hostTools(...buttons) {
   return el("div", { class: "host-tools" }, text(t("youAreHost"), "muted small"), buttons);
 }
 
-// --- night, live mode (master) ---
+// --- night, live and hybrid mode (master) ---
 
 function liveNight() {
   const g = game();
+  const hybrid = g.mode === "hybrid"; // the called players choose on their own phone
   const roles = secrets.roles || {};
   const steps = nightSteps(g.counts, g.round, rules());
   const step = steps.includes(g.step) ? g.step : "sleep";
@@ -531,6 +568,11 @@ function liveNight() {
       stepRole[s] ? roleIcon(stepRole[s]) : uiIcon(s === "sleep" ? "moon" : "dawn"), t(`step_${s}`))));
   const living = aliveIds(alive());
   const title = nightTitle(g.round);
+  // hybrid: wait for the phone, or skip if it never answers
+  const next = (done) => [
+    action(done ? t("continue") : t("waitPhone"), run(() => go()), { disabled: !done }),
+    !done && action(t("skipStep"), () => { if (confirm(t("confirmSkipStep"))) run(() => go())(); }, { cls: "link" }),
+  ];
 
   if (step === "sleep") {
     return phaseCard("night", title, progress, say(t("saySleep")), action(t("callWolves"), run(() => go())));
@@ -542,6 +584,16 @@ function liveNight() {
       return phaseCard("night", title, progress, say(t("sayWolvesFirst")),
         iconText("wolf", t("wolvesFirstNight", listNames(wolves))),
         action(t("continue"), run(() => go())), text(t("thenWolves"), "muted small"), back);
+    }
+    if (hybrid) {
+      const wv = secrets.wolfVotes || {};
+      const { target, agreed } = wolfTarget(roles, alive(), wv);
+      const picks = wolves.map((w) => `${playerName(w)} → ${wv[w] ? playerName(wv[w]) : "…"}`).join(", ");
+      return phaseCard("night", title, progress,
+        say(t("sayWolvesHybrid")),
+        iconText("wolf", t("wolvesAreHybrid", wolves.length, listNames(wolves))),
+        text(agreed ? t("wolvesChose", playerName(target)) : t("wolvesDeciding", picks), agreed ? "phase-text" : "muted"),
+        next(agreed), text(t("thenWolves"), "muted small"), back);
     }
     const prey = living.filter((id) => roles[id] !== "wolf");
     return phaseCard("night", title, progress,
@@ -571,6 +623,17 @@ function liveNight() {
     if (step === "seer" && seerSpent(holder, g.round)) {
       return phaseCard("night", title, progress, say(t(`say_${step}`)),
         iconText(step, t("seerSpentLive", playerName(holder))), action(t("continue"), run(() => go())), back);
+    }
+    if (hybrid) {
+      const pick = secrets.actions?.[holder];
+      const vision = secrets.visions?.[holder]?.[g.round];
+      const done = !!pick && (step !== "seer" || pick === SKIP || !!vision);
+      const status = !pick ? t("waitingFor", playerName(holder), name)
+        : pick === SKIP ? t("seerSkipsLine", playerName(holder))
+        : step === "seer" ? (vision ? t("seerLooked", playerName(holder), playerName(pick), visionText(vision)) : t("spiritsAnswering"))
+        : t("actionLine", playerName(holder), t(`verb_${step}`), playerName(pick));
+      return phaseCard("night", title, progress, say(t(`sayHybrid_${step}`)),
+        iconText(step, status), next(done), text(t("thenClose", roleName(step)), "muted small"), back);
     }
     const options = step === "magician"
       ? protectable(roles, alive(), rules(), lastProtected(g.round))
@@ -670,7 +733,7 @@ function liveDay() {
 
 function livePlayerNight() {
   const g = game();
-  phaseCard("night", nightTitle(g.round), text(isDead(uid) ? t("liveNightDead") : t("liveNight")),
+  phaseCard("night", nightTitle(g.round), text(isDead(uid) ? t("liveNightDead") : g.mode === "hybrid" ? t("hybridNight") : t("liveNight")),
     bittenRound === g.round && bittenNews()); // the bitten prole learns it before dawn
 
 }
@@ -718,9 +781,10 @@ function masterNight() {
   phaseCard("night", nightTitle(g.round),
     text(t("remoteNightIntro")),
     el("ul", { class: "status" }, lines),
+    nightProgress(),
     text(t("ifResolveNow", describeNight(resolveNightFromSecrets(g.round))), "preview"),
     action([uiIcon("dawn"), t("dawnButton")], () => {
-      if (!st.complete && !confirm(t("confirmIncomplete"))) return;
+      if (!(st.complete && allConfirmed()) && !confirm(t("confirmIncomplete"))) return;
       run(resolveNightNow)();
     }));
 }
@@ -734,12 +798,28 @@ function playerNight() {
   const title = nightTitle(g.round);
   const living = aliveIds(alive());
   const others = living.filter((id) => id !== uid);
+  const remote = g.mode === "remote";
+  const done = remote ? { [`lobbies/${code}/nightDone/${uid}`]: true } : {};
+  const act = (id) => update(ref(db), { [`secrets/${code}/actions/${uid}`]: id, ...done });
+  const footer = () => [remote && nightProgress(), forceDawn()];
+  // remote: whoever has nothing to do tonight still picks someone, so nobody can tell the roles apart
+  // by who touches their phone. The pick changes nothing and is only kept on this phone.
+  const decoy = (...intro) => {
+    if (!remote) return phaseCard("night", title, intro);
+    const confirmed = lobby.nightDone?.[uid] ? decoyPick || true : null;
+    return phaseCard("night", title, intro, text(t("decoyPrompt")),
+      confirmedChoice(others, confirmed, (id) => t("confirmPick", playerName(id)), (id) => {
+        decoyPick = id;
+        return set(lobbyRef("nightDone", uid), true);
+      }),
+      footer());
+  };
 
   if (isDead(uid)) return phaseCard("night", title, text(t("deadNight")), forceDawn());
 
   if (myRole === "wolf") {
     if (!pack) return phaseCard("night", title, text(t("loadingPack")));
-    if (!wolvesAct(rules(), g.round)) return phaseCard("night", title, text(t("firstNightWolf")), forceDawn());
+    if (!wolvesAct(rules(), g.round)) return decoy(text(t("firstNightWolf")));
     const packRoles = Object.fromEntries(pack.map((id) => [id, "wolf"]));
     const { target, agreed } = wolfTarget(packRoles, alive(), wolfVotes);
     const prey = living.filter((id) => !pack.includes(id));
@@ -749,43 +829,51 @@ function playerNight() {
     };
     return phaseCard("night", title,
       text(agreed ? t("packAgrees", playerName(target)) : t("chooseVictimRemote")),
-      choiceList(prey, wolfVotes[uid], (id) => set(ref(db, `secrets/${code}/wolfVotes/${uid}`), id), pickers),
-      forceDawn());
+      confirmedChoice(prey, wolfVotes[uid], (id) => t("confirmAttack", playerName(id)),
+        (id) => update(ref(db), { [`secrets/${code}/wolfVotes/${uid}`]: id, ...done }), { extra: pickers }),
+      footer());
   }
   if (myRole === "seer") {
     const vision = visions[g.round];
     const once = rules().seerUses === "once";
-    if (seerSpent(uid, g.round)) return phaseCard("night", title, text(t("seerSpent")), forceDawn());
-    if (myAction === SKIP) return phaseCard("night", title, text(t("seerSkipped")), forceDawn());
+    if (seerSpent(uid, g.round)) return decoy(text(t("seerSpent")));
+    if (myAction === SKIP) return phaseCard("night", title, text(t("seerSkipped")), footer());
     if (!myAction) {
       return phaseCard("night", title,
         text(once ? t("seerPromptOnce") : rules().seerSees === "role" ? t("seerPromptRole") : t("seerPrompt")),
-        choiceList(others, null, (id) => {
-          if (!confirm(t("seerConfirm", playerName(id)))) return;
-          return set(ref(db, `secrets/${code}/actions/${uid}`), id);
-        }),
-        once && action(t("seerSkip"), run(() => set(ref(db, `secrets/${code}/actions/${uid}`), SKIP)), { cls: "secondary" }),
-        forceDawn());
+        confirmedChoice(others, null, (id) => t("confirmAction", t("verb_seer"), playerName(id)), act, { final: true }),
+        once && action(t("seerSkip"), run(() => act(SKIP)), { cls: "secondary" }),
+        footer());
     }
     return phaseCard("night", title,
       vision ? el("p", { class: "vision" + (vision.wolf ? " wolf" : "") }, visionText(vision)) : text(t("spiritsAnswering")),
       text(t("keepVision")),
-      forceDawn());
+      footer());
   }
-  if (myRole === "magician") {
+  if (myRole === "magician" || myRole === "medium") {
     const r = rules();
-    const options = living.filter((id) => (r.magicianSelf || id !== uid) && (r.magicianRepeat || id !== memo.lastProtected));
-    return phaseCard("night", title, text(t("magicianPrompt")),
-      choiceList(options, myAction, (id) => set(ref(db, `secrets/${code}/actions/${uid}`), id)),
-      forceDawn());
+    const options = myRole === "medium" ? others
+      : living.filter((id) => (r.magicianSelf || id !== uid) && (r.magicianRepeat || id !== memo.lastProtected));
+    return phaseCard("night", title, text(t(`${myRole}Prompt`)),
+      confirmedChoice(options, myAction, (id) => t("confirmAction", t(`verb_${myRole}`), playerName(id)), act),
+      footer());
   }
-  if (myRole === "medium") {
-    return phaseCard("night", title, text(t("mediumPrompt")),
-      choiceList(others, myAction, (id) => set(ref(db, `secrets/${code}/actions/${uid}`), id)),
-      forceDawn());
-  }
-  phaseCard("night", title, text(t("villageSleeps")), forceDawn());
+  decoy();
 }
+
+/** Hybrid: the phone is only used when the master calls this player's role. */
+function hybridPlayerNight() {
+  const g = game();
+  const called = !isDead(uid) && ((g.step === "wolves" && myRole === "wolf" && wolvesAct(rules(), g.round))
+    || (NIGHT_ROLES.includes(g.step) && g.step === myRole));
+  return called ? playerNight() : livePlayerNight();
+}
+
+const allConfirmed = () => aliveIds(alive()).every((id) => lobby.nightDone?.[id]);
+const nightProgress = () => {
+  const living = aliveIds(alive());
+  return text(t("nightDoneCount", living.filter((id) => lobby.nightDone?.[id]).length, living.length), "muted small");
+};
 
 // --- day ---
 
@@ -839,9 +927,11 @@ function renderDay() {
   const shown = candidates
     .filter((id) => !canVote || id !== uid || r.selfVote)
     .sort((a, b) => (counts[b] || 0) - (counts[a] || 0) || playerName(a).localeCompare(playerName(b)));
-  const list = choiceList(shown, master ? null : votes[uid],
-    canVote ? (id) => set(lobbyRef("votes", uid), id) : null,
-    voters, (id) => el("span", { class: "tally" }, String(counts[id] || 0)));
+  const tally = (id) => el("span", { class: "tally" }, String(counts[id] || 0));
+  const list = canVote
+    ? confirmedChoice(shown, votes[uid], (id) => t("confirmVote", playerName(id)), (id) => set(lobbyRef("votes", uid), id),
+      { extra: voters, right: tally })
+    : choiceList(shown, master ? null : votes[uid], null, voters, tally);
 
   const intro = vote.ballot === 2 ? t("remoteRunoff", listNames(candidates)) : canVote ? t("remoteVote") : t("watchVote");
   const everyone = voted === living.length;
@@ -1008,7 +1098,9 @@ function autoAdvance() {
     const st = nightStatus(secrets.roles || {}, alive(), secrets.wolfVotes || {}, secrets.actions || {},
       { rules: rules(), round: g.round, seerUsed: seer ? seerUsed(seer, g.round) : false });
     // the key includes the choices, so a change during the pause restarts it
-    if (st.complete) return scheduleAuto(`night:${g.round}:${JSON.stringify([secrets.wolfVotes, secrets.actions])}`, AUTO_NIGHT_DELAY, resolveNightNow);
+    if (st.complete && allConfirmed()) {
+      return scheduleAuto(`night:${g.round}:${JSON.stringify([secrets.wolfVotes, secrets.actions])}`, AUTO_NIGHT_DELAY, resolveNightNow);
+    }
   } else if (g.phase === "day" && !g.vote?.done) {
     const vote = g.vote || { ballot: 1 };
     const votes = lobby.votes || {};
@@ -1274,6 +1366,7 @@ function startNight() {
     [gamePath("step")]: "sleep",
     [gamePath("vote")]: null,
     [`lobbies/${code}/votes`]: null,
+    [`lobbies/${code}/nightDone`]: null,
     [`secrets/${code}/wolfVotes`]: null,
     [`secrets/${code}/actions`]: null,
     // marks the secrets as belonging to this night (see secretsFresh)
@@ -1403,6 +1496,7 @@ function applyVoteResult(result) {
 function endGame() {
   return update(ref(db), {
     [`secrets/${code}`]: null, [`lobbies/${code}/game`]: null, [`lobbies/${code}/votes`]: null, [`lobbies/${code}/seen`]: null,
+    [`lobbies/${code}/nightDone`]: null,
   });
 }
 
