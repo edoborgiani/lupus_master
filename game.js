@@ -207,6 +207,27 @@ export function winner(roles, alive, rules) {
   return null;
 }
 
+/**
+ * Remote games: how often each villager's night suspect (the pick made without a night action) was really a wolf.
+ * `picks`: { uid: { round: target } }; `converted`: { uid: round } (a bitten prole is a wolf only after that night).
+ * Picks made while the picker was a wolf don't count.
+ */
+export function suspectStats(picks = {}, roles = {}, converted = {}) {
+  const wolfAt = (id, round) => roles[id] === "wolf" && !(converted[id] >= round);
+  const stats = {};
+  for (const [id, byRound] of Object.entries(picks || {})) {
+    let right = 0;
+    let total = 0;
+    for (const [round, target] of Object.entries(byRound || {})) {
+      if (!target || wolfAt(id, Number(round))) continue;
+      total++;
+      if (wolfAt(target, Number(round))) right++;
+    }
+    if (total) stats[id] = { right, total };
+  }
+  return stats;
+}
+
 // ---------- live mode ----------
 
 /**

@@ -28,6 +28,7 @@
 //   secrets/{CODE}/actions/{uid}      tonight's seer/magician/medium choice; readable by its author
 //   secrets/{CODE}/visions/{uid}/{round}  the seer's answers { target, wolf, role? }; readable by the seer
 //   secrets/{CODE}/memo/{uid}         { lastProtected } for the magician; readable by its owner
+//   secrets/{CODE}/suspects/{uid}/{round}  remote: who the player suspected on a night without an action; readable by its author
 //   secrets/{CODE}/nightLog/{round}   what really happened each night, for the master
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
@@ -39,7 +40,7 @@ import { firebaseConfig } from "./firebase-config.js";
 import {
   ROLES, ROLE_ORDER, NIGHT_ROLES, DEFAULT_RULES, RULE_OPTIONS, withDefaults, suggestedCounts, maxWolves, setupError,
   dealRoles, aliveIds, livingWithRole, wolfTarget, wolvesAct, protectable, nightStatus, seerVision, resolveNight,
-  tallyVotes, closeVote, revealsRole, winner, nightSteps, SKIP, seerCanLook, seerUsedBefore, SPECIAL_ROLES, isProle, trueRole,
+  tallyVotes, closeVote, revealsRole, winner, nightSteps, suspectStats, SKIP, seerCanLook, seerUsedBefore, SPECIAL_ROLES, isProle, trueRole,
 } from "./game.js";
 import { LANGS, t, getLang, setLang, roleName, roleDesc, roleInfo, guideHtml, translatePage } from "./i18n.js";
 
@@ -120,7 +121,7 @@ let visionKey = null;     // seer answer being written, to avoid writing it twic
 // players: a pick waiting for confirmation (reset whenever the step changes), and whether a confirmed pick is being changed
 let pendingSel = null;
 let changing = false;
-let decoyPick = null;     // remote: who this player picked tonight without a night role (only kept on this phone)
+let suspects = {};        // remote: { round: uid } this player suspected on nights without an action
 
 const lobbyRef = (...parts) => ref(db, ["lobbies", code, ...parts].join("/"));
 const nameKey = (name) => encodeURIComponent(name.trim().toLowerCase()).replace(/\./g, "%2E");
@@ -277,7 +278,6 @@ function renderGame() {
     tieMode = false;
     pendingSel = null;
     changing = false;
-    if (phase !== "night") decoyPick = null;
   }
 
   for (const id of ["card-start", "card-wait", "card-setup", "card-phase", "card-role", "card-master-roles", "card-log"]) {
@@ -803,14 +803,13 @@ function playerNight() {
   const act = (id) => update(ref(db), { [`secrets/${code}/actions/${uid}`]: id, ...done });
   const footer = () => [remote && nightProgress(), forceDawn()];
   // remote: whoever has nothing to do tonight still picks someone, so nobody can tell the roles apart
-  // by who touches their phone. The pick changes nothing and is only kept on this phone.
+  // by who touches their phone. The pick changes nothing in the game; it only feeds the statistics at the end.
   const decoy = (...intro) => {
     if (!remote) return phaseCard("night", title, intro);
-    const confirmed = lobby.nightDone?.[uid] ? decoyPick || true : null;
+    const confirmed = lobby.nightDone?.[uid] ? suspects[g.round] || true : null;
     return phaseCard("night", title, intro, text(t("decoyPrompt")),
       confirmedChoice(others, confirmed, (id) => t("confirmPick", playerName(id)), (id) => {
-        decoyPick = id;
-        return set(lobbyRef("nightDone", uid), true);
+        return update(ref(db), { [`lobbies/${code}/nightDone/${uid}`]: true, [`secrets/${code}/suspects/${uid}/${g.round}`]: id });
       }),
       footer());
   };
@@ -966,7 +965,24 @@ function renderOver() {
       if (g.converted?.[id]) li.lastChild.append(t("exProle"));
       return li;
     })),
+    suspectBoard(g.suspects),
     isMaster() ? back : isHostOnly() ? hostTools(back) : text(t("waitNewGame"), "muted small"));
+}
+
+/** Remote games: who suspected real wolves on the nights they had no action. Just for fun, it changed nothing. */
+function suspectBoard(stats = {}) {
+  const ids = Object.keys(stats).sort((a, b) =>
+    (stats[b].right / stats[b].total - stats[a].right / stats[a].total) || stats[b].right - stats[a].right
+    || playerName(a).localeCompare(playerName(b)));
+  if (!ids.length) return null;
+  return el("div", { class: "suspects" },
+    el("h3", { class: "with-icon" }, uiIcon("bulb"), t("suspectsTitle")),
+    text(t("suspectsNote"), "muted small"),
+    el("ul", { class: "plain-list" }, ids.map((id) => {
+      const li = playerRow(id, playerName(id));
+      li.append(el("span", { class: "tally" }, t("suspectsScore", stats[id].right, stats[id].total)));
+      return li;
+    })));
 }
 
 // --- history ---
@@ -1149,6 +1165,7 @@ function syncSecrets() {
     memo = {};
     masons = null;
     bittenRound = null;
+    suspects = {};
     secrets = null;
     revealed = false;
     visionKey = null;
@@ -1174,6 +1191,7 @@ function syncSecrets() {
     if (myRole !== "wolf" || bittenRound) {
       subscribe("converted", `secrets/${code}/converted/${uid}`, (r) => { bittenRound = r || null; renderGame(); });
     }
+    if (game()?.mode === "remote") subscribe("suspects", `secrets/${code}/suspects/${uid}`, (v) => { suspects = v || {}; renderGame(); });
     renderGame();
   });
 }
@@ -1436,6 +1454,7 @@ function outcome(updates, entry, victim, how, roles = secrets.roles || {}) {
     updates[gamePath("winner")] = won;
     updates[gamePath("reveal")] = Object.fromEntries(Object.keys(roles).map((id) => [id, trueRole(roles, id, cursed())]));
     if (secrets.converted) updates[gamePath("converted")] = secrets.converted;
+    if (secrets.suspects) updates[gamePath("suspects")] = suspectStats(secrets.suspects, roles, secrets.converted);
     updates[gamePath("vote")] = null;
   }
   return won;
@@ -1458,7 +1477,11 @@ function resolveNightNow() {
   Object.assign(updates, conversionUpdates(g.round));
   const rolesAfter = res.converted ? { ...roles, [res.converted]: "wolf" } : roles;
   const won = outcome(updates, { type: "night", round: g.round, victim: res.victim }, res.victim, "night", rolesAfter);
-  if (won && res.converted) updates[gamePath("converted")] = { ...(secrets.converted || {}), [res.converted]: g.round };
+  if (won && res.converted) {
+    const converted = { ...(secrets.converted || {}), [res.converted]: g.round };
+    updates[gamePath("converted")] = converted;
+    if (secrets.suspects) updates[gamePath("suspects")] = suspectStats(secrets.suspects, rolesAfter, converted);
+  }
   if (!won) {
     updates[gamePath("phase")] = "day";
     updates[gamePath("vote")] = { ballot: 1 };
