@@ -8,11 +8,11 @@ export const LANGS = ["it", "en"];
 const ROLE_NAMES = {
   it: {
     wolf: ["Lupo", "Lupi"], seer: ["Veggente", "Veggenti"], magician: ["Mago", "Maghi"],
-    medium: ["Medium", "Medium"], mason: ["Massone", "Massoni"], prole: ["Prole", "Prole"], mayor: ["Sindaco", "Sindaci"], citizen: ["Cittadino", "Cittadini"],
+    medium: ["Sonnambulo", "Sonnambuli"], mason: ["Massone", "Massoni"], prole: ["Prole", "Prole"], mayor: ["Sindaco", "Sindaci"], damned: ["Indemoniato", "Indemoniati"], gravedigger: ["Becchino", "Becchini"], mime: ["Mimo", "Mimi"], citizen: ["Cittadino", "Cittadini"],
   },
   en: {
     wolf: ["Wolf", "Wolves"], seer: ["Seer", "Seers"], magician: ["Magician", "Magicians"],
-    medium: ["Medium", "Mediums"], mason: ["Mason", "Masons"], prole: ["Cursed", "Cursed"], mayor: ["Mayor", "Mayors"], citizen: ["Citizen", "Citizens"],
+    medium: ["Night-walker", "Night-walkers"], mason: ["Mason", "Masons"], prole: ["Cursed", "Cursed"], mayor: ["Mayor", "Mayors"], damned: ["Damned", "Damned"], gravedigger: ["Gravedigger", "Gravediggers"], mime: ["Mime", "Mimes"], citizen: ["Citizen", "Citizens"],
   },
 };
 
@@ -31,6 +31,9 @@ const ROLE_DESC = {
     prole: (r) => "Sembri un semplice abitante del villaggio, ma se i lupi ti attaccano non muori: diventi uno di loro e da quel momento giochi con il branco."
       + (r.proleKnows ? "" : " In questa partita la Prole non sa di esserlo: il suo telefono mostra Cittadino finché non viene morsa.")
       + (r.seerSeesProle === "wolf" ? " Il veggente ti vede già come un lupo." : ""),
+    gravedigger: (r) => `${r.gravediggerUses === "once" ? "Una sola volta per partita, nella notte che scegli tu," : "Ogni notte"} scopri il ruolo di chi è stato giustiziato dal villaggio il giorno prima. Dal vivo scopri solo se era un lupo oppure no.`,
+    mime: () => "La prima notte indichi un giocatore e ne copi il ruolo: dall'alba sei come lui, anche un lupo. Dal vivo puoi diventare solo lupo o cittadino.",
+    damned: () => "Giochi con i lupi e vinci con loro: tu sai chi sono, ma loro non sanno chi sei. Non hai poteri e non uccidi: di giorno aiutali a sviare il villaggio.",
     mayor: (r) => `Sei un abitante del villaggio con un potere: durante la votazione puoi decidere da solo chi viene eliminato, ${r.mayorUses === "once" ? "una sola volta per partita" : "ogni giorno"}. Quando lo usi, tutti scoprono che sei il sindaco.`,
     citizen: () => "Sei un semplice abitante del villaggio. Di giorno discuti e vota per scoprire ed eliminare i lupi.",
   },
@@ -47,6 +50,9 @@ const ROLE_DESC = {
     prole: (r) => "You look like an ordinary villager, but if the wolves attack you, you don't die: you become one of them and from then on you play with the pack."
       + (r.proleKnows ? "" : " In this game the Cursed doesn't know it: their phone shows Citizen until they are bitten.")
       + (r.seerSeesProle === "wolf" ? " The seer already sees you as a wolf." : ""),
+    gravedigger: (r) => `${r.gravediggerUses === "once" ? "Once per game, on the night you choose," : "Each night"} you learn the role of the player the village executed the day before. In live games you only learn whether they were a wolf.`,
+    mime: () => "On the first night you point at a player and copy their role: from dawn you are like them, even a wolf. In live games you can only become a wolf or a citizen.",
+    damned: () => "You play with the wolves and win with them: you know who they are, but they don't know you. You have no powers and don't kill: during the day, help them mislead the village.",
     mayor: (r) => `You are a villager with a power: during the vote you can decide alone who is eliminated, ${r.mayorUses === "once" ? "once per game" : "every day"}. When you use it, everyone learns you are the mayor.`,
     citizen: () => "You are an ordinary villager. During the day, discuss and vote to find and eliminate the wolves.",
   },
@@ -57,20 +63,26 @@ const ROLE_INFO = {
   it: {
     wolf: "Di notte i lupi si riconoscono e si accordano su una vittima: devono essere tutti d'accordo. Di giorno fingono di essere innocenti.",
     seer: "Una volta scelto il giocatore, la visione non si può cambiare. Usa ciò che scopri per guidare il villaggio, ma se i lupi capiscono chi sei, sarai il loro prossimo bersaglio.",
-    magician: "La protezione vale per tutta la casa: se il medium è in visita lì, è salvo anche lui.",
+    magician: "La protezione vale per tutta la casa: se il sonnambulo è in visita lì, è salvo anche lui.",
     medium: "Non puoi visitare te stesso. Se il mago protegge la casa che visiti, vi salvate entrambi.",
     mason: "Di giorno potete garantire l'uno per l'altro, ma attenzione: se vi esponete troppo, i lupi sapranno chi colpire.",
     prole: "Finché non vieni morso giochi per il villaggio. Se vieni morso, il tuo telefono te lo dice e il branco ti accoglie: da lì in poi vinci con i lupi. Al villaggio si annuncia che quella notte nessuno è morto.",
+    gravedigger: "Se il giorno prima nessuno è stato giustiziato, non c'è nulla da scoprire: quella notte scegli un sospettato come gli altri.",
+    mime: "Se copi un ruolo speciale, in partita ce ne saranno due. Se copi un lupo entri nel branco, e i lupi lo vengono a sapere.",
+    damned: "Per la conta finale vali come un abitante: i lupi vincono solo con i loro numeri, e il villaggio vince eliminando tutti i lupi, anche se tu sei ancora vivo. Attento: i lupi possono ucciderti senza saperlo. Il veggente ti vede come non lupo.",
     mayor: "Scegli bene il momento: una decisione sbagliata elimina un innocente, e da quel momento i lupi sanno chi sei.",
     citizen: "Non hai poteri notturni, ma il tuo voto conta: osserva, ascolta e smaschera i lupi.",
   },
   en: {
     wolf: "At night the wolves recognise each other and agree on a victim: they must all agree. During the day they pretend to be innocent.",
     seer: "Once you pick a player, the vision can't be changed. Use what you learn to guide the village, but if the wolves figure out who you are, you'll be next.",
-    magician: "The protection covers the whole house: if the medium is visiting, they are safe too.",
+    magician: "The protection covers the whole house: if the night-walker is visiting, they are safe too.",
     medium: "You can't visit yourself. If the magician protects the house you visit, you are both safe.",
     mason: "During the day you can vouch for each other, but careful: if you expose yourselves too much, the wolves will know who to strike.",
     prole: "Until you're bitten you play for the village. If you're bitten, your phone tells you and the pack welcomes you: from then on you win with the wolves. The village is told that nobody died that night.",
+    gravedigger: "If nobody was executed the day before, there is nothing to find: that night you pick a suspect like everyone else.",
+    mime: "If you copy a special role, the game will have two of them. If you copy a wolf you join the pack, and the wolves find out.",
+    damned: "In the final count you count as a villager: the wolves win only by their own numbers, and the village wins by eliminating all the wolves, even if you are still alive. Careful: the wolves may kill you without knowing. The seer sees you as not a wolf.",
     mayor: "Pick your moment: a wrong decision eliminates an innocent, and from then on the wolves know who you are.",
     citizen: "You have no night powers, but your vote counts: watch, listen and unmask the wolves.",
   },
@@ -134,13 +146,32 @@ const STRINGS = {
     sayWolvesHybrid: "Lupi, aprite gli occhi… e scegliete la vittima sul telefono.",
     sayHybrid_seer: "Veggente, apri gli occhi… e scegli sul telefono chi vuoi scoprire.",
     sayHybrid_magician: "Mago, apri gli occhi… e scegli sul telefono la casa da proteggere.",
-    sayHybrid_medium: "Medium, apri gli occhi… e scegli sul telefono la casa da visitare.",
+    sayHybrid_medium: "Sonnambulo, apri gli occhi… e scegli sul telefono la casa da visitare.",
     waitPhone: "In attesa della scelta sul telefono…", skipStep: "Non risponde? Vai avanti senza scelta",
     confirmSkipStep: "Andare avanti senza la sua scelta? Vale come nessuna azione.",
     pickConfirmed: (n) => `Hai confermato: ${n}.`, pickDone: "Hai confermato la tua scelta.", changePick: "Cambia scelta",
     confirmPick: (n) => `Conferma: ${n}`, confirmVote: (n) => `Conferma il voto: ${n}`,
     decoyPrompt: "Stanotte non hai azioni, ma scegli comunque un giocatore e conferma: chi sospetti? La scelta non cambia nulla, serve solo a non far capire a nessuno chi ha un ruolo.",
     nightDoneCount: (k, n) => `Hanno confermato ${k} giocatori su ${n}.`,
+    say_gravedigger: "Becchino, apri gli occhi…", sayHybrid_gravedigger: "Becchino, apri gli occhi… e scava dal telefono.", step_gravedigger: "Becchino",
+    say_mime: "Mimo, apri gli occhi… chi vuoi imitare?", sayHybrid_mime: "Mimo, apri gli occhi… e scegli sul telefono chi imitare.",
+    step_mime: "Mimo", verb_mime: "imita",
+    graveNobodyLive: "Ieri nessuno è stato giustiziato. Chiama comunque il becchino, aspetta qualche secondo e continua.",
+    graveLive: (n, d) => `${n} è il becchino. Ieri è stato giustiziato ${d}: era un lupo?`,
+    graveYes: "Sì, era un lupo", graveNo: "No, non era un lupo",
+    graveSignal: "Fai un cenno al becchino: pollice in su se era un lupo, in giù se non lo era.",
+    mimeWolf: "Diventa un lupo", mimeVillager: "Diventa un cittadino",
+    mimeSignal: "Fai un cenno al mimo: pollice in su se diventa lupo, in giù se diventa cittadino. Dalla prossima notte gioca con il nuovo ruolo.",
+    graveDugLine: (n, v) => `${n} scava: ${v}`, graveNobodyLine: (n) => `${n}: ieri nessuno è stato giustiziato`,
+    mimeLine: (n, x, r) => `${n} imita ${x}: diventa ${r}`,
+    mimePrompt: "Scegli chi imitare: dall'alba avrai il suo ruolo. La scelta non si può cambiare.",
+    mimeWait: "All'alba guarda la tua carta: avrai il nuovo ruolo.",
+    graveSpent: "Hai già usato il tuo potere.", graveNobody: "Ieri nessuno è stato giustiziato: stanotte non c'è nulla da scoprire.",
+    gravePrompt: (n) => `Ieri è stato giustiziato ${n}. Vuoi scoprire il suo ruolo?`, graveDig: (n) => `Scava: scopri il ruolo di ${n}`,
+    youMimed: (n) => `Hai imitato ${n}.`, mimedNews: (n, r) => `Hai imitato ${n}: ora sei ${r}.`, exMime: " (ex Mimo)",
+    logGrave: (n, r) => `il becchino scopre ${n}: ${r}`, logMime: (m, x, r) => `il mimo ${m} imita ${x}: diventa ${r}`,
+    rule_gravediggerUses: "Il becchino usa il suo potere…", opt_gravediggerUses_every: "ogni notte", opt_gravediggerUses_once: "una volta per partita",
+    rule_seerSees_desc: "Dal vivo scopre solo se è un lupo, perché il master risponde col pollice.",
     mayorPower: "Usa il potere del sindaco", mayorPowerOnce: "Puoi decidere tu chi viene eliminato, una sola volta per partita. Tutti sapranno che sei il sindaco.",
     mayorPowerEvery: "Puoi decidere tu chi viene eliminato oggi. Tutti sapranno che sei il sindaco.",
     decreePrompt: "Scegli chi viene eliminato. La tua decisione chiude subito la votazione e rivela a tutti che sei il sindaco.",
@@ -157,7 +188,7 @@ const STRINGS = {
     youAreHost: "Sei l'host di questa partita.",
     // night
     night: (r) => `Notte ${r}`, step_sleep: "Sonno", step_wolves: "Lupi", step_seer: "Veggente",
-    step_magician: "Mago", step_medium: "Medium", step_dawn: "Alba",
+    step_magician: "Mago", step_medium: "Sonnambulo", step_dawn: "Alba",
     saySleep: "Scende la notte sul villaggio. Tutti chiudono gli occhi.", callWolves: "Avanti: chiama i lupi",
     sayWolves: "Lupi, aprite gli occhi… e scegliete la vostra vittima.", sayWolvesFirst: "Lupi, aprite gli occhi e riconoscetevi.",
     wolvesAre: (n, names) => `${n === 1 ? "Il lupo è" : "I lupi sono"} ${names}. Tocca il giocatore che indicano:`,
@@ -167,7 +198,7 @@ const STRINGS = {
     thenWolves: "Poi: “Lupi, chiudete gli occhi.”",
     say_seer: "Veggente, apri gli occhi… chi vuoi scoprire stanotte?",
     say_magician: "Mago, apri gli occhi… quale casa proteggi stanotte?",
-    say_medium: "Medium, apri gli occhi… a casa di chi vai stanotte?",
+    say_medium: "Sonnambulo, apri gli occhi… a casa di chi vai stanotte?",
     roleIsOut: (r) => `Il ${r} è fuori gioco. Chiamalo comunque, così nessuno se ne accorge, aspetta qualche secondo e continua.`,
     holderIs: (n, r) => `${n} è il ${r}. Tocca il giocatore che indica:`,
     seerYes: "Sì, è un lupo", seerNo: "No, non è un lupo", seerRole: (r) => `Ruolo: ${r}`,
@@ -177,8 +208,8 @@ const STRINGS = {
     confirmAction: (verb, n) => `Conferma: ${verb} ${n}`, choosePlayer: "Scegli un giocatore", thenClose: (r) => `Poi: “${r}, chiudi gli occhi.”`,
     sayDawn: "Sorge il sole. Tutti aprono gli occhi.", victimBig: (n) => `Vittima della notte: ${n}`, victimsBig: (n) => `Vittime della notte: ${n}`,
     newsVictims: (n) => `Vittime della notte: ${n}.`, and: " e ", logDied: "muoiono ",
-    res_wolfHouse: (m, w) => `Inoltre il medium ${m} è andato a casa di ${w}, che è un lupo, e muore.`,
-    rule_mediumWolfHouse: "Il medium muore se va a casa di un lupo", rule_mediumWolfHouse_desc: "Così una notte può avere due vittime. Il mago, proteggendo quella casa, lo salva.", nobodyBig: "Stanotte nessuno è morto",
+    res_wolfHouse: (m, w) => `Inoltre il sonnambulo ${m} è andato a casa di ${w}, che è un lupo, e muore.`,
+    rule_mediumWolfHouse: "Il sonnambulo muore se va a casa di un lupo", rule_mediumWolfHouse_desc: "Così una notte può avere due vittime. Il mago, proteggendo quella casa, lo salva.", nobodyBig: "Stanotte nessuno è morto",
     onlyForYou: (t) => `Solo per te: ${t}`, announceDay: "Annuncialo e inizia il giorno", back2: "← Indietro",
     liveNight: "Metti via il telefono, chiudi gli occhi e segui la voce del master.", liveNightDead: "Sei fuori gioco: tieni gli occhi chiusi e resta in silenzio.",
     remoteNightIntro: "Tutti chiudono gli occhi. Chi ha un ruolo notturno sceglie dal proprio telefono.",
@@ -188,8 +219,8 @@ const STRINGS = {
     ifResolveNow: (t) => `Se risolvi ora: ${t}`, dawnButton: "Alba: risolvi la notte",
     confirmIncomplete: "Non tutti hanno ancora scelto. Le scelte mancanti valgono come nessuna azione. Risolvere comunque?",
     res_protected: (a) => `i lupi attaccano ${a}, ma il mago protegge la casa. Nessuno muore.`,
-    res_medium: (a) => `i lupi attaccano ${a}; il medium è lì e muore al suo posto.`,
-    "res_medium-away": (a) => `i lupi attaccano la casa di ${a}, ma il medium è fuori in visita e si salva.`,
+    res_medium: (a) => `i lupi attaccano ${a}; il sonnambulo è lì e muore al suo posto.`,
+    "res_medium-away": (a) => `i lupi attaccano la casa di ${a}, ma il sonnambulo è fuori in visita e si salva.`,
     res_killed: (v) => `i lupi uccidono ${v}.`, "res_first-night": "prima notte: i lupi si riconoscono soltanto. Nessuno muore.",
     "res_no-attack": "i lupi non si sono messi d'accordo su una vittima. Nessuno muore.",
     forceDawn: "Qualcuno non risponde? Risolvi la notte adesso", confirmForceDawn: "Risolvere la notte adesso? Le scelte mancanti valgono come nessuna azione.",
@@ -241,8 +272,8 @@ const STRINGS = {
     rule_seerSees: "Il veggente scopre…", opt_seerSees_team: "se è un lupo o no", opt_seerSees_role: "il ruolo esatto",
     rule_magicianSelf: "Il mago può proteggere se stesso", rule_magicianSelf_desc: "",
     rule_magicianRepeat: "Il mago può proteggere la stessa casa due notti di fila", rule_magicianRepeat_desc: "",
-    rule_mediumAwayDies: "Il medium muore se i lupi attaccano casa sua mentre è fuori",
-    rule_mediumAwayDies_desc: "Se disattivato, il medium in visita altrove si salva.",
+    rule_mediumAwayDies: "Il sonnambulo muore se i lupi attaccano casa sua mentre è fuori",
+    rule_mediumAwayDies_desc: "Se disattivato, il sonnambulo in visita altrove si salva.",
     rule_secondTie: "Se anche il ballottaggio finisce pari…", opt_secondTie_none: "nessuno viene eliminato", opt_secondTie_random: "si estrae a sorte",
     rule_selfVote: "Si può votare se stessi", rule_selfVote_desc: "",
     rule_reveal: "Quando qualcuno esce di scena, il suo ruolo…", opt_reveal_none: "resta segreto fino alla fine",
@@ -255,7 +286,7 @@ const STRINGS = {
     seerSpentLive: (n) => `${n} ha già usato il suo potere. Chiamalo comunque, così nessuno se ne accorge, poi continua.`,
     seerSkipLive: "Non lo usa stanotte",
     err_oneMason: "I massoni devono essere almeno 2.", zeroOrTwo: "0 oppure almeno 2",
-    yourMasons: (n) => `I tuoi confratelli massoni: ${n}`,
+    yourMasons: (n) => `I tuoi confratelli massoni: ${n}`, theWolvesAre: (n) => `I lupi sono: ${n}. Loro non sanno chi sei.`,
     bitten: "Stanotte i lupi ti hanno morso: ora sei un lupo! Da adesso giochi con il branco.",
     bittenHidden: "Eri la Prole senza saperlo: stanotte i lupi ti hanno morso e ora sei un lupo! Da adesso giochi con il branco.",
     step_prole: "Prole", step_check: "Ruoli", sayProle: "Prole, apri gli occhi.",
@@ -331,13 +362,32 @@ const STRINGS = {
     sayWolvesHybrid: "Wolves, open your eyes… and choose your victim on your phone.",
     sayHybrid_seer: "Seer, open your eyes… and choose on your phone who to find out about.",
     sayHybrid_magician: "Magician, open your eyes… and choose on your phone whose house to protect.",
-    sayHybrid_medium: "Medium, open your eyes… and choose on your phone whose house to visit.",
+    sayHybrid_medium: "Night-walker, open your eyes… and choose on your phone whose house to visit.",
     waitPhone: "Waiting for the choice on the phone…", skipStep: "No answer? Continue without a choice",
     confirmSkipStep: "Continue without their choice? It counts as no action.",
     pickConfirmed: (n) => `You confirmed: ${n}.`, pickDone: "You confirmed your choice.", changePick: "Change choice",
     confirmPick: (n) => `Confirm: ${n}`, confirmVote: (n) => `Confirm vote: ${n}`,
     decoyPrompt: "You have no action tonight, but pick a player anyway and confirm: who do you suspect? It changes nothing, it only keeps anyone from telling who has a role.",
     nightDoneCount: (k, n) => `${k} of ${n} players have confirmed.`,
+    say_gravedigger: "Gravedigger, open your eyes…", sayHybrid_gravedigger: "Gravedigger, open your eyes… and dig on your phone.", step_gravedigger: "Gravedigger",
+    say_mime: "Mime, open your eyes… who do you want to copy?", sayHybrid_mime: "Mime, open your eyes… and choose on your phone who to copy.",
+    step_mime: "Mime", verb_mime: "copies",
+    graveNobodyLive: "Nobody was executed yesterday. Call the gravedigger anyway, wait a few seconds, then continue.",
+    graveLive: (n, d) => `${n} is the gravedigger. ${d} was executed yesterday: were they a wolf?`,
+    graveYes: "Yes, they were a wolf", graveNo: "No, they weren't a wolf",
+    graveSignal: "Signal to the gravedigger: thumbs up if they were a wolf, thumbs down if not.",
+    mimeWolf: "Becomes a wolf", mimeVillager: "Becomes a citizen",
+    mimeSignal: "Signal to the mime: thumbs up if they become a wolf, thumbs down if a citizen. From the next night they play their new role.",
+    graveDugLine: (n, v) => `${n} digs: ${v}`, graveNobodyLine: (n) => `${n}: nobody was executed yesterday`,
+    mimeLine: (n, x, r) => `${n} copies ${x}: becomes ${r}`,
+    mimePrompt: "Choose who to copy: from dawn you'll have their role. The choice can't be changed.",
+    mimeWait: "At dawn look at your card: you'll have the new role.",
+    graveSpent: "You have already used your power.", graveNobody: "Nobody was executed yesterday: there is nothing to find tonight.",
+    gravePrompt: (n) => `${n} was executed yesterday. Do you want to find out their role?`, graveDig: (n) => `Dig: find out ${n}'s role`,
+    youMimed: (n) => `You copied ${n}.`, mimedNews: (n, r) => `You copied ${n}: you are now ${r}.`, exMime: " (formerly Mime)",
+    logGrave: (n, r) => `the gravedigger finds ${n}: ${r}`, logMime: (m, x, r) => `mime ${m} copies ${x}: becomes ${r}`,
+    rule_gravediggerUses: "The gravedigger uses their power…", opt_gravediggerUses_every: "every night", opt_gravediggerUses_once: "once per game",
+    rule_seerSees_desc: "In live games they only learn whether it's a wolf, because the master answers with a thumb.",
     mayorPower: "Use the mayor's power", mayorPowerOnce: "You can decide alone who is eliminated, once per game. Everyone will learn you are the mayor.",
     mayorPowerEvery: "You can decide alone who is eliminated today. Everyone will learn you are the mayor.",
     decreePrompt: "Choose who is eliminated. Your decision closes the vote at once and reveals to everyone that you are the mayor.",
@@ -353,7 +403,7 @@ const STRINGS = {
     startNight: (r) => `Start night ${r}`, waitSeen: "Wait until everyone has seen their role",
     youAreHost: "You are the host of this game.",
     night: (r) => `Night ${r}`, step_sleep: "Sleep", step_wolves: "Wolves", step_seer: "Seer",
-    step_magician: "Magician", step_medium: "Medium", step_dawn: "Dawn",
+    step_magician: "Magician", step_medium: "Night-walker", step_dawn: "Dawn",
     saySleep: "Night falls on the village. Everyone, close your eyes.", callWolves: "Next: call the wolves",
     sayWolves: "Wolves, open your eyes… and choose your victim.", sayWolvesFirst: "Wolves, open your eyes and recognise each other.",
     wolvesAre: (n, names) => `${n === 1 ? "The wolf is" : "The wolves are"} ${names}. Tap the player they point at:`,
@@ -363,7 +413,7 @@ const STRINGS = {
     thenWolves: "Then: “Wolves, close your eyes.”",
     say_seer: "Seer, open your eyes… who do you want to find out about tonight?",
     say_magician: "Magician, open your eyes… whose house do you protect tonight?",
-    say_medium: "Medium, open your eyes… whose house do you visit tonight?",
+    say_medium: "Night-walker, open your eyes… whose house do you visit tonight?",
     roleIsOut: (r) => `The ${r} is out of the game. Call them anyway, so nobody notices, wait a few seconds, then continue.`,
     holderIs: (n, r) => `${n} is the ${r}. Tap the player they point at:`,
     seerYes: "Yes, a wolf", seerNo: "No, not a wolf", seerRole: (r) => `Role: ${r}`,
@@ -373,8 +423,8 @@ const STRINGS = {
     confirmAction: (verb, n) => `Confirm: ${verb} ${n}`, choosePlayer: "Select a player", thenClose: (r) => `Then: “${r}, close your eyes.”`,
     sayDawn: "The sun rises. Everyone, open your eyes.", victimBig: (n) => `Tonight's victim: ${n}`, victimsBig: (n) => `Tonight's victims: ${n}`,
     newsVictims: (n) => `Tonight's victims: ${n}.`, and: " and ", logDied: "died: ",
-    res_wolfHouse: (m, w) => `Also, the medium ${m} visited ${w}, who is a wolf, and dies.`,
-    rule_mediumWolfHouse: "The medium dies if they visit a wolf's house", rule_mediumWolfHouse_desc: "So a night can have two victims. The magician saves them by protecting that house.", nobodyBig: "Nobody died tonight",
+    res_wolfHouse: (m, w) => `Also, the night-walker ${m} visited ${w}, who is a wolf, and dies.`,
+    rule_mediumWolfHouse: "The night-walker dies if they visit a wolf's house", rule_mediumWolfHouse_desc: "So a night can have two victims. The magician saves them by protecting that house.", nobodyBig: "Nobody died tonight",
     onlyForYou: (t) => `Only for you: ${t}`, announceDay: "Announce it and start the day", back2: "← Back",
     liveNight: "Put your phone away, close your eyes and follow the master's voice.", liveNightDead: "You are out: keep your eyes closed and stay silent.",
     remoteNightIntro: "Everyone closes their eyes. Players with a night role choose on their phone.",
@@ -384,8 +434,8 @@ const STRINGS = {
     ifResolveNow: (t) => `If you resolve now: ${t}`, dawnButton: "Dawn: resolve the night",
     confirmIncomplete: "Not everyone has chosen yet. Missing choices count as no action. Resolve anyway?",
     res_protected: (a) => `the wolves attack ${a}, but the magician protects the house. Nobody dies.`,
-    res_medium: (a) => `the wolves attack ${a}; the medium is there and dies in their place.`,
-    "res_medium-away": (a) => `the wolves attack ${a}'s house, but the medium is out visiting and survives.`,
+    res_medium: (a) => `the wolves attack ${a}; the night-walker is there and dies in their place.`,
+    "res_medium-away": (a) => `the wolves attack ${a}'s house, but the night-walker is out visiting and survives.`,
     res_killed: (v) => `the wolves kill ${v}.`, "res_first-night": "first night: the wolves only recognise each other. Nobody dies.",
     "res_no-attack": "the wolves didn't agree on a victim. Nobody dies.",
     forceDawn: "Someone isn't responding? Resolve the night now", confirmForceDawn: "Resolve the night now? Missing choices count as no action.",
@@ -432,8 +482,8 @@ const STRINGS = {
     rule_seerSees: "The seer learns…", opt_seerSees_team: "whether it's a wolf", opt_seerSees_role: "the exact role",
     rule_magicianSelf: "The magician can protect themselves", rule_magicianSelf_desc: "",
     rule_magicianRepeat: "The magician can protect the same house two nights in a row", rule_magicianRepeat_desc: "",
-    rule_mediumAwayDies: "The medium dies if the wolves attack their house while they're away",
-    rule_mediumAwayDies_desc: "If off, the medium visiting elsewhere survives.",
+    rule_mediumAwayDies: "The night-walker dies if the wolves attack their house while they're away",
+    rule_mediumAwayDies_desc: "If off, the night-walker visiting elsewhere survives.",
     rule_secondTie: "If the run-off is tied too…", opt_secondTie_none: "nobody is eliminated", opt_secondTie_random: "draw at random",
     rule_selfVote: "Players can vote for themselves", rule_selfVote_desc: "",
     rule_reveal: "When someone leaves the game, their role…", opt_reveal_none: "stays secret until the end",
@@ -446,7 +496,7 @@ const STRINGS = {
     seerSpentLive: (n) => `${n} has already used their power. Call them anyway, so nobody notices, then continue.`,
     seerSkipLive: "Not using it tonight",
     err_oneMason: "There must be at least 2 masons.", zeroOrTwo: "0 or at least 2",
-    yourMasons: (n) => `Your fellow masons: ${n}`,
+    yourMasons: (n) => `Your fellow masons: ${n}`, theWolvesAre: (n) => `The wolves are: ${n}. They don't know who you are.`,
     bitten: "Tonight the wolves bit you: you are now a wolf! From now on you play with the pack.",
     bittenHidden: "You were the Cursed without knowing it: tonight the wolves bit you and now you are a wolf! From now on you play with the pack.",
     step_prole: "Cursed", step_check: "Roles", sayProle: "Cursed, open your eyes.",
@@ -495,8 +545,8 @@ const GUIDE = {
         discute e vota per eliminare chi sospetta essere un lupo. Nessuno conosce il ruolo degli altri: bisogna osservare,
         ragionare e convincere.</p>
       <ul>
-        <li><strong><img class="ri" src="icons/citizen.svg" alt=""> Il villaggio</strong> (Cittadini, Veggente, Mago, Medium, Massoni, Prole) vince quando <strong>tutti i lupi sono stati eliminati</strong>.</li>
-        <li><strong><img class="ri" src="icons/wolf.svg" alt=""> I lupi</strong> vincono quando ${r.wolvesWin === "majority"
+        <li><strong><img class="ri" src="icons/citizen.svg" alt=""> Il villaggio</strong> (Cittadini, Veggente, Mago, Sonnambulo, Becchino, Mimo, Massoni, Prole, Sindaco) vince quando <strong>tutti i lupi sono stati eliminati</strong>.</li>
+        <li><strong><img class="ri" src="icons/wolf.svg" alt=""> I lupi</strong> (e l'Indemoniato, che vince con loro) vincono quando ${r.wolvesWin === "majority"
           ? "<strong>sono più degli altri giocatori</strong> (ad esempio 2 lupi contro 1 abitante)"
           : "<strong>sono tanti quanti gli altri giocatori</strong> (ad esempio 2 lupi contro 2 abitanti)"}.</li>
       </ul>
@@ -513,23 +563,25 @@ const GUIDE = {
           ? " Può farlo <strong>una sola volta per partita</strong>, nella notte che preferisce; le altre notti viene chiamato lo stesso." : ""}</li>
         <li><strong>Il mago</strong> indica la casa da proteggere (${r.magicianSelf ? "anche la propria" : "non la propria"}).${r.magicianRepeat
           ? " Può proteggere la stessa casa più notti di fila." : " <strong>Non può proteggere la stessa casa due notti di fila.</strong>"}</li>
-        <li><strong>Il medium</strong> indica la casa di un altro giocatore in cui andare.</li>
+        <li><strong>Il sonnambulo</strong> indica la casa di un altro giocatore in cui andare.</li>
+        <li><strong>Il mimo</strong> (solo la prima notte) indica un giocatore e ne copia il ruolo; dal vivo diventa solo lupo o cittadino.</li>
+        <li><strong>Il becchino</strong> scopre il ruolo di chi è stato giustiziato il giorno prima${r.gravediggerUses === "once" ? ", <strong>una sola volta per partita</strong>" : ""}; dal vivo scopre solo se era un lupo.</li>
       </ol>
       <p>Il master chiama ogni ruolo anche se chi lo aveva è fuori gioco, così nessuno capisce chi è rimasto.</p>
     </section>
     <section>
       <h3><img class="ri" src="icons/ui/dawn.svg" alt=""> L'alba</h3>
       <ul>
-        <li>Se il mago protegge la casa attaccata, <strong>nessuno muore</strong> (nemmeno il medium, se è lì).</li>
-        <li>Altrimenti, se il medium è in visita nella casa attaccata, <strong>muore il medium</strong> al posto del padrone di casa.</li>
+        <li>Se il mago protegge la casa attaccata, <strong>nessuno muore</strong> (nemmeno il sonnambulo, se è lì).</li>
+        <li>Altrimenti, se il sonnambulo è in visita nella casa attaccata, <strong>muore il sonnambulo</strong> al posto del padrone di casa.</li>
         <li>${r.mediumAwayDies
-          ? "Se i lupi attaccano la casa del medium mentre è fuori in visita, <strong>il medium muore comunque</strong>."
-          : "Se i lupi attaccano la casa del medium mentre è fuori in visita, <strong>il medium si salva</strong>: non è in casa."}</li>
+          ? "Se i lupi attaccano la casa del sonnambulo mentre è fuori in visita, <strong>il sonnambulo muore comunque</strong>."
+          : "Se i lupi attaccano la casa del sonnambulo mentre è fuori in visita, <strong>il sonnambulo si salva</strong>: non è in casa."}</li>
         <li>Se i lupi attaccano <strong>la Prole</strong>, non muore: <strong>diventa un lupo</strong> e da quel momento gioca con il branco.${r.proleKnows
           ? " Dal vivo, prima dell'alba il master chiama la Prole e le fa il pollice in su se è stata morsa."
           : " La Prole non sa di esserlo: dal vivo, prima dell'alba tutti riguardano il proprio ruolo sul telefono."}</li>
         <li>Altrimenti muore la vittima dei lupi.</li>${r.mediumWolfHouse
-          ? "\n        <li>Se il medium va <strong>a casa di un lupo</strong>, muore anche lui (a meno che il mago protegga quella casa): quella notte i morti possono essere due.</li>" : ""}
+          ? "\n        <li>Se il sonnambulo va <strong>a casa di un lupo</strong>, muore anche lui (a meno che il mago protegga quella casa): quella notte i morti possono essere due.</li>" : ""}
       </ul>
       <p>Il master annuncia solo chi è morto, non il perché.${r.reveal === "all" ? " Il ruolo della vittima viene rivelato a tutti." : ""}</p>
     </section>
@@ -577,8 +629,8 @@ const GUIDE = {
         and votes to eliminate whoever they suspect is a wolf. Nobody knows the others' roles: you have to watch, reason
         and persuade.</p>
       <ul>
-        <li><strong><img class="ri" src="icons/citizen.svg" alt=""> The village</strong> (Citizens, Seer, Magician, Medium, Masons, Cursed) wins when <strong>all the wolves have been eliminated</strong>.</li>
-        <li><strong><img class="ri" src="icons/wolf.svg" alt=""> The wolves</strong> win when ${r.wolvesWin === "majority"
+        <li><strong><img class="ri" src="icons/citizen.svg" alt=""> The village</strong> (Citizens, Seer, Magician, Night-walker, Gravedigger, Mime, Masons, Cursed, Mayor) wins when <strong>all the wolves have been eliminated</strong>.</li>
+        <li><strong><img class="ri" src="icons/wolf.svg" alt=""> The wolves</strong> (and the Damned, who wins with them) win when ${r.wolvesWin === "majority"
           ? "<strong>they outnumber the other players</strong> (for example 2 wolves against 1 villager)"
           : "<strong>they are as many as the other players</strong> (for example 2 wolves against 2 villagers)"}.</li>
       </ul>
@@ -595,23 +647,25 @@ const GUIDE = {
           ? " They can do it <strong>only once per game</strong>, on the night they prefer; on the other nights they are called anyway." : ""}</li>
         <li><strong>The magician</strong> points at the house to protect (${r.magicianSelf ? "their own too" : "not their own"}).${r.magicianRepeat
           ? " They can protect the same house several nights in a row." : " <strong>They can't protect the same house two nights in a row.</strong>"}</li>
-        <li><strong>The medium</strong> points at another player's house to visit.</li>
+        <li><strong>The night-walker</strong> points at another player's house to visit.</li>
+        <li><strong>The mime</strong> (first night only) points at a player and copies their role; in live games they only become a wolf or a citizen.</li>
+        <li><strong>The gravedigger</strong> learns the role of the player executed the day before${r.gravediggerUses === "once" ? ", <strong>only once per game</strong>" : ""}; in live games only whether they were a wolf.</li>
       </ol>
       <p>The master calls every role even if its player is out, so nobody can tell who is left.</p>
     </section>
     <section>
       <h3><img class="ri" src="icons/ui/dawn.svg" alt=""> Dawn</h3>
       <ul>
-        <li>If the magician protects the attacked house, <strong>nobody dies</strong> (not even the medium, if visiting).</li>
-        <li>Otherwise, if the medium is visiting the attacked house, <strong>the medium dies</strong> in place of its owner.</li>
+        <li>If the magician protects the attacked house, <strong>nobody dies</strong> (not even the night-walker, if visiting).</li>
+        <li>Otherwise, if the night-walker is visiting the attacked house, <strong>the night-walker dies</strong> in place of its owner.</li>
         <li>${r.mediumAwayDies
-          ? "If the wolves attack the medium's house while they are out visiting, <strong>the medium dies anyway</strong>."
-          : "If the wolves attack the medium's house while they are out visiting, <strong>the medium survives</strong>: they aren't home."}</li>
+          ? "If the wolves attack the night-walker's house while they are out visiting, <strong>the night-walker dies anyway</strong>."
+          : "If the wolves attack the night-walker's house while they are out visiting, <strong>the night-walker survives</strong>: they aren't home."}</li>
         <li>If the wolves attack <strong>the Cursed</strong>, they don't die: <strong>they become a wolf</strong> and from then on play with the pack.${r.proleKnows
           ? " In live games, before dawn the master calls the Cursed and gives them a thumbs up if they were bitten."
           : " The Cursed doesn't know it: in live games, before dawn everyone looks at their role on their phone again."}</li>
         <li>Otherwise the wolves' victim dies.</li>${r.mediumWolfHouse
-          ? "\n        <li>If the medium visits <strong>a wolf's house</strong>, they die too (unless the magician protects that house): that night there can be two deaths.</li>" : ""}
+          ? "\n        <li>If the night-walker visits <strong>a wolf's house</strong>, they die too (unless the magician protects that house): that night there can be two deaths.</li>" : ""}
       </ul>
       <p>The master only announces who died, not why.${r.reveal === "all" ? " The victim's role is revealed to everyone." : ""}</p>
     </section>

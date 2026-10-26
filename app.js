@@ -19,7 +19,7 @@
 //   lobbies/{CODE}/settings           { mode, rules } chosen by the controller before the game
 //   lobbies/{CODE}/seen/{uid}         true once the player has looked at their role
 //   lobbies/{CODE}/game               { phase, mode, rules, counts, round, step, alive, vote, log, revealed, winner, reveal,
-//                                       mayor (uid, once they used their power), mayorUsed }
+//                                       mayors/{uid} (revealed by using their power), mayorUsed/{uid}, converted, mimed }
 //   lobbies/{CODE}/votes/{uid}        remote day vote: uid voted against (public, like pointing)
 //   lobbies/{CODE}/nightDone/{uid}    remote: true once the player has confirmed tonight's pick
 //   lobbies/{CODE}/decree/{uid}       phone vote: the mayor decides alone who is eliminated (this reveals them)
@@ -29,7 +29,9 @@
 //   secrets/{CODE}/wolfVotes/{uid}    tonight's victim chosen by each wolf; readable by wolves
 //   secrets/{CODE}/actions/{uid}      tonight's seer/magician/medium choice; readable by its author
 //   secrets/{CODE}/visions/{uid}/{round}  the seer's answers { target, wolf, role? }; readable by the seer
-//   secrets/{CODE}/memo/{uid}         { lastProtected } for the magician; readable by its owner
+//   secrets/{CODE}/memo/{uid}         { lastProtected } for the magician, { used } for the seer; readable by its owner
+//   secrets/{CODE}/graves/{uid}/{round}  the gravedigger's findings { target, wolf, role? }; readable by the gravedigger
+//   secrets/{CODE}/mimed/{uid}        who the mime copied on the first night; readable by the mime
 //   secrets/{CODE}/suspects/{uid}/{round}  remote: who the player suspected on a night without an action; readable by its author
 //   secrets/{CODE}/nightLog/{round}   what really happened each night, for the master
 
@@ -42,6 +44,7 @@ import { firebaseConfig } from "./firebase-config.js";
 import {
   ROLES, ROLE_ORDER, NIGHT_ROLES, DEFAULT_RULES, RULE_OPTIONS, withDefaults, suggestedCounts, maxWolves, setupError,
   dealRoles, aliveIds, livingWithRole, wolfTarget, wolvesAct, protectable, nightStatus, seerVision, resolveNight,
+  ACTING_ROLES, DIG, graveCanDig, graveTarget, graveFinding, mimeCopy,
   tallyVotes, closeVote, revealsRole, winner, nightSteps, suspectStats, mayorCanDecide, SKIP, seerCanLook, seerUsedBefore, SPECIAL_ROLES, isProle, trueRole,
 } from "./game.js";
 import { LANGS, t, getLang, setLang, roleName, roleDesc, roleInfo, guideHtml, translatePage } from "./i18n.js";
@@ -55,6 +58,7 @@ const AUTO_VOTE_DELAY = 5000;  // ... and before closing a vote everyone has cas
 const RULE_GROUPS = [
   ["wolf", ["firstNightKill", "wolvesWin"]],
   ["seer", ["seerSees", "seerUses"]],
+  ["gravedigger", ["gravediggerUses"]],
   ["magician", ["magicianSelf", "magicianRepeat"]],
   ["medium", ["mediumAwayDies", "mediumWolfHouse"]],
   ["mason", ["masonsWake"]],
@@ -107,6 +111,8 @@ let wolfVotes = {};       // wolves only: tonight's picks of the pack
 let myAction = null;      // seer/magician/medium: tonight's choice
 let visions = {};         // seer only: { round: { target, wolf, role? } }
 let memo = {};            // magician only: { lastProtected }
+let graves = {};          // gravedigger only: { round: { target, wolf, role? } }
+let mimedTarget = null;   // the player this player copied as the mime, if they did
 let masons = null;        // masons only: the uids of all masons
 let bittenRound = null;   // the night this player was turned into a wolf (prole), if any
 let secrets = null;       // controller only: everything under secrets/{CODE}
@@ -122,7 +128,7 @@ let decreeKey = null;     // controller: mayor's decree being applied, to avoid 
 // masterless remote: pending automatic step
 let autoKey = null;
 let autoTimer = null;
-let visionKey = null;     // seer answer being written, to avoid writing it twice
+const answering = new Set(); // controller: seer/gravedigger answers being written, to avoid writing them twice
 // players: a pick waiting for confirmation (reset whenever the step changes), and whether a confirmed pick is being changed
 let pendingSel = null;
 let changing = false;
@@ -152,6 +158,9 @@ const MODE_LABELS = { live: "modeLive", hybrid: "modeHybrid", remote: "modeRemot
 /** Whether the seer already had a vision before tonight (for the "once per game" rule), from what this phone knows. */
 const seerUsed = (seerId, round) => seerUsedBefore(seerId === uid ? visions : secrets?.visions?.[seerId], round);
 const seerSpent = (seerId, round) => !seerCanLook(rules(), seerUsed(seerId, round));
+/** Same for the gravedigger, with their findings { round: finding }. */
+const graveUsed = (id, round) => seerUsedBefore(id === uid ? graves : secrets?.graves?.[id], round);
+const graveSpent = (id, round) => !graveCanDig(rules(), graveUsed(id, round));
 const runnerName = () => (lobby.masterId ? t("theMaster") : t("hostOf", playerName(lobby.hostId)));
 /** The role's pixel-art icon (icons/<role>.svg). */
 const roleIcon = (r, cls = "ri") => el("img", { class: cls, src: `icons/${r}.svg`, alt: "" });
@@ -171,11 +180,11 @@ const visionText = (v) => (v.role ? t("isRole", playerName(v.target), roleName(v
 const formatCounts = (counts) => ROLE_ORDER.filter((r) => counts[r] > 0)
   .map((r) => `${counts[r]} ${roleName(r, counts[r])}`).join(" · ");
 const describeNight = (res) => t(`res_${res.reason}`, playerName(res.reason === "killed" ? res.victim : res.attacked))
-  + (res.extra ? ` ${t("res_wolfHouse", playerName(res.extra), playerName(res.visited))}` : "");
+  + (res.extras || []).map((m) => ` ${t("res_wolfHouse", playerName(m), playerName(res.visits[m]))}`).join("");
 /** What the master alone should know about a night (a plain kill needs no explanation). */
-const nightSecret = (res) => res && res.reason !== "pending" && (res.reason !== "killed" || res.extra);
+const nightSecret = (res) => res && res.reason !== "pending" && (res.reason !== "killed" || res.extras?.length);
 /** Who died during a night: the wolves' victim and, with the house rule, a medium who visited a wolf. */
-const nightDeaths = (e) => [e?.victim, e?.victim2].filter(Boolean);
+const nightDeaths = (e) => e?.victims || [];
 const andList = (ids) => ids.map(playerName).join(t("and"));
 
 // ---------- screens ----------
@@ -234,7 +243,7 @@ function renderLobby() {
     else if (!lobby.masterId && p.id === lobby.hostId) li.append(badge(t("host"), "special"));
     const shown = game()?.revealed?.[p.id];
     if (shown) li.append(roleBadge(shown));
-    else if (game()?.mayor === p.id) li.querySelector(".pname").append(roleBadge("mayor")); // revealed by their decision
+    else if (game()?.mayors?.[p.id]) li.querySelector(".pname").append(roleBadge("mayor")); // revealed by their decision
     return li;
   }));
 
@@ -494,12 +503,15 @@ function renderMyRole() {
   if (myRole === "wolf" && pack) {
     const others = pack.filter((id) => id !== uid);
     extra = (bittenRound ? `${bittenText()} ` : "") + (others.length ? t("yourPack", listNames(others)) : t("onlyWolf"));
+  } else if (myRole === "damned" && pack) {
+    extra = t("theWolvesAre", listNames(pack));
   } else if (myRole === "mason" && masons) {
     extra = t("yourMasons", listNames(masons.filter((id) => id !== uid)));
   } else if (myRole === "seer") {
     const seen = Object.entries(visions).filter(([, v]) => v).sort(([a], [b]) => a - b);
     extra = seen.length ? t("yourVisions", seen.map(([r, v]) => `${t("nightN", r)}: ${visionText(v)}`).join(" · ")) : "";
   }
+  if (mimedTarget) extra = `${t("youMimed", playerName(mimedTarget))} ${extra}`.trim();
   $("#role-pack").textContent = extra;
   $("#game-counts").textContent = game().counts ? t("inThisGame", formatCounts(game().counts)) : "";
 }
@@ -513,6 +525,7 @@ function renderMasterRoles() {
     const li = playerRow(id, playerName(id));
     li.append(roleBadge(trueRole(secrets.roles, id, secrets.cursed)));
     if (secrets.converted?.[id]) li.lastChild.append(t("exProle"));
+    if (secrets.mimed?.[id]) li.lastChild.append(t("exMime"));
     return li;
   }));
 }
@@ -565,7 +578,9 @@ function liveNight() {
   const g = game();
   const hybrid = g.mode === "hybrid"; // the called players choose on their own phone
   const roles = secrets.roles || {};
-  const steps = nightSteps(g.counts, g.round, rules());
+  const present = { ...g.counts }; // hybrid: a role copied by the mime is called too
+  for (const id of Object.keys(secrets.mimed || {})) present[roles[id]] = (present[roles[id]] || 0) + 1;
+  const steps = nightSteps(present, g.round, rules());
   const step = steps.includes(g.step) ? g.step : "sleep";
   const idx = steps.indexOf(step);
   const proleStep = (s) => s === "prole" || s === "check";
@@ -578,7 +593,8 @@ function liveNight() {
       ...(proleStep(step) ? conversionUpdates(g.round, {}, false) : {}), [gamePath("step")]: steps[idx - 1],
     })), { cls: "link" })
     : null;
-  const stepRole = { wolves: "wolf", masons: "mason", seer: "seer", magician: "magician", medium: "medium", prole: "prole", check: "prole" };
+  const stepRole = { wolves: "wolf", masons: "mason", seer: "seer", magician: "magician", medium: "medium",
+    mime: "mime", gravedigger: "gravedigger", prole: "prole", check: "prole" };
   const progress = el("ul", { class: "steps" }, steps.map((s, i) =>
     el("li", { class: i === idx ? "on" : i < idx ? "done" : "" },
       stepRole[s] ? roleIcon(stepRole[s]) : uiIcon(s === "sleep" ? "moon" : "dawn"), t(`step_${s}`))));
@@ -629,30 +645,57 @@ function liveNight() {
       action(t("continue"), run(() => go())), text(t("thenMasons"), "muted small"), back);
   }
 
-  if (NIGHT_ROLES.includes(step)) {
-    const [holder] = livingWithRole(roles, alive(), step);
+  if (ACTING_ROLES.includes(step)) {
+    const holders = livingWithRole(roles, alive(), step); // more than one only if the mime copied this role (hybrid)
     const name = roleName(step).toLowerCase();
-    if (!holder) {
-      return phaseCard("night", title, progress, say(t(`say_${step}`)),
-        iconText(step, t("roleIsOut", name)), action(t("continue"), run(() => go())), back);
-    }
-    if (step === "seer" && seerSpent(holder, g.round)) {
-      return phaseCard("night", title, progress, say(t(`say_${step}`)),
-        iconText(step, t("seerSpentLive", playerName(holder))), action(t("continue"), run(() => go())), back);
-    }
+    const grave = step === "gravedigger" ? graveTarget(logEntries(), g.round) : null;
+    const idle = (id) => (step === "seer" && seerSpent(id, g.round)) || (step === "gravedigger" && (!grave || graveSpent(id, g.round)));
+    // called anyway, so nobody can tell
+    const bluff = (msg) => phaseCard("night", title, progress, say(t(`say_${step}`)), iconText(step, msg),
+      action(t("continue"), run(() => go())), back);
+    if (!holders.length) return bluff(t("roleIsOut", name));
+    if (holders.every(idle)) return bluff(step === "gravedigger" && !grave ? t("graveNobodyLive") : t("seerSpentLive", listNames(holders)));
+
     if (hybrid) {
-      const pick = secrets.actions?.[holder];
-      const vision = secrets.visions?.[holder]?.[g.round];
-      const done = !!pick && (step !== "seer" || pick === SKIP || !!vision);
-      const status = !pick ? t("waitingFor", playerName(holder), name)
-        : pick === SKIP ? t("seerSkipsLine", playerName(holder))
-        : step === "seer" ? (vision ? t("seerLooked", playerName(holder), playerName(pick), visionText(vision)) : t("spiritsAnswering"))
-        : t("actionLine", playerName(holder), t(`verb_${step}`), playerName(pick));
+      const pickOf = (id) => secrets.actions?.[id];
+      const vision = (id) => secrets.visions?.[id]?.[g.round];
+      const found = (id) => secrets.graves?.[id]?.[g.round];
+      const done = (id) => idle(id) || (!!pickOf(id) && (pickOf(id) === SKIP
+        || (step === "seer" ? !!vision(id) : step === "gravedigger" ? !!found(id) : true)));
+      const status = (id) => {
+        const pick = pickOf(id);
+        if (idle(id)) return t("seerSpentLine", playerName(id));
+        if (!pick) return t("waitingFor", playerName(id), name);
+        if (pick === SKIP) return t("seerSkipsLine", playerName(id));
+        if (step === "seer") return vision(id) ? t("seerLooked", playerName(id), playerName(pick), visionText(vision(id))) : t("spiritsAnswering");
+        if (step === "gravedigger") return found(id) ? t("graveDugLine", playerName(id), visionText(found(id))) : t("spiritsAnswering");
+        if (step === "mime") return t("mimeLine", playerName(id), playerName(pick), roleName(mimeCopy(roles, pick, cursed(), true)));
+        return t("actionLine", playerName(id), t(`verb_${step}`), playerName(pick));
+      };
       return phaseCard("night", title, progress, say(t(`sayHybrid_${step}`)),
-        iconText(step, status), next(done), text(t("thenClose", roleName(step)), "muted small"), back);
+        holders.map((id) => iconText(step, status(id))), next(holders.every(done)), text(t("thenClose", roleName(step)), "muted small"), back);
+    }
+
+    // live: in live games the mime only becomes a wolf or a citizen, so there is a single holder
+    const holder = holders.find((id) => !idle(id));
+    const once = (step === "seer" && rules().seerUses === "once") || (step === "gravedigger" && rules().gravediggerUses === "once");
+    const notTonight = once && action(t("seerSkipLive"), run(() => go()), { cls: "link" });
+    const thumbs = (yes, yesText, noText, signal) => [
+      el("p", { class: "vision" + (yes ? " wolf" : "") }, uiIcon(yes ? "yes" : "no"), yes ? yesText : noText),
+      text(signal, "muted small"),
+    ];
+    if (step === "gravedigger") {
+      const f = graveFinding(roles, grave, cursed(), false);
+      return phaseCard("night", title, progress, say(t("say_gravedigger")),
+        iconText(step, t("graveLive", playerName(holder), playerName(grave))),
+        thumbs(f.wolf, t("graveYes"), t("graveNo"), t("graveSignal")),
+        action(t("continue"), run(() => go({
+          [`secrets/${code}/actions/${holder}`]: DIG, [`secrets/${code}/graves/${holder}/${g.round}`]: f,
+        }))),
+        text(t("thenClose", roleName(step)), "muted small"), notTonight, back);
     }
     const options = step === "magician"
-      ? protectable(roles, alive(), rules(), lastProtected(g.round))
+      ? protectable(roles, alive(), rules(), lastProtectedBy(holder), holder)
       : living.filter((id) => id !== holder);
     const updates = () => {
       const u = { [`secrets/${code}/actions/${holder}`]: liveSel };
@@ -665,10 +708,10 @@ function liveNight() {
     let answer = null;
     if (step === "seer" && liveSel) {
       const v = seerVision(roles, liveSel, rules(), cursed());
-      answer = [
-        el("p", { class: "vision" + (v.wolf ? " wolf" : "") }, v.role ? t("seerRole", roleName(v.role)) : [uiIcon(v.wolf ? "yes" : "no"), v.wolf ? t("seerYes") : t("seerNo")]),
-        text(v.role ? t("seerSignalRole") : t("seerSignal"), "muted small"),
-      ];
+      answer = thumbs(v.wolf, t("seerYes"), t("seerNo"), t("seerSignal"));
+    }
+    if (step === "mime" && liveSel) {
+      answer = thumbs(mimeCopy(roles, liveSel, cursed(), false) === "wolf", t("mimeWolf"), t("mimeVillager"), t("mimeSignal"));
     }
     return phaseCard("night", title, progress, say(t(`say_${step}`)),
       iconText(step, t("holderIs", playerName(holder), name)),
@@ -677,7 +720,7 @@ function liveNight() {
       action(liveSel ? t("confirmAction", t(`verb_${step}`), playerName(liveSel)) : t("choosePlayer"),
         run(() => go(updates())), { disabled: !liveSel }),
       text(t("thenClose", roleName(step)), "muted small"),
-      step === "seer" && rules().seerUses === "once" && action(t("seerSkipLive"), run(() => go()), { cls: "link" }),
+      notTonight,
       back);
   }
 
@@ -732,8 +775,8 @@ function liveDay() {
       action(t("cancel"), () => { tieMode = false; renderGame(); }, { cls: "link" }));
   }
 
-  const [mayor] = livingWithRole(secrets.roles || {}, alive(), "mayor");
-  const mayorPower = mayor && mayorCanDecide(rules(), g.mayorUsed);
+  const mayor = livingWithRole(secrets.roles || {}, alive(), "mayor").find((id) => mayorCanDecide(rules(), g.mayorUsed?.[id]));
+  const mayorPower = !!mayor;
   if (mayorPower && decreeMode) {
     return phaseCard("day", title, news,
       iconText("mayor", t("decreeLive", playerName(mayor))),
@@ -783,8 +826,8 @@ function masterNight() {
   const roles = secrets.roles || {};
   const wv = secrets.wolfVotes || {};
   const acts = secrets.actions || {};
-  const [seer] = livingWithRole(roles, alive(), "seer");
-  const st = nightStatus(roles, alive(), wv, acts, { rules: rules(), round: g.round, seerUsed: seer ? seerUsed(seer, g.round) : false });
+  const st = statusFromSecrets(g.round);
+  const grave = graveTarget(logEntries(), g.round);
   const livingWolves = livingWithRole(roles, alive(), "wolf");
 
   const line = (icon, done, content) => el("li", {}, el("span", { class: "who" }, icon), el("span", { class: done ? "ok" : "pending" }, content));
@@ -793,18 +836,23 @@ function masterNight() {
     line(roleIcon("wolf"), st.wolvesDone, !wolvesAct(rules(), g.round) ? t("wolvesFirst")
       : st.wolves.agreed ? t("wolvesChose", playerName(st.wolves.target)) : t("wolvesDeciding", picks)),
   ];
-  for (const r of NIGHT_ROLES) {
-    if (!g.counts?.[r]) continue;
-    const holder = st[r];
+  for (const r of ACTING_ROLES) {
+    if (!g.counts?.[r] && !st.holders[r].length) continue;
+    if (r === "mime" && g.round !== 1) continue;
     const name = roleName(r).toLowerCase();
-    let content;
-    if (!holder) content = t("roleOut", name);
-    else if (r === "seer" && st.seerSpent) content = t("seerSpentLine", playerName(holder));
-    else if (acts[holder] === SKIP) content = t("seerSkipsLine", playerName(holder));
-    else if (!acts[holder]) content = t("waitingFor", playerName(holder), name);
-    else if (r === "seer") content = t("seerLooked", playerName(holder), playerName(acts[holder]), visionText(seerVision(roles, acts[holder], rules(), cursed())));
-    else content = t("actionLine", playerName(holder), t(`verb_${r}`), playerName(acts[holder]));
-    lines.push(line(roleIcon(r), !holder || !!acts[holder] || (r === "seer" && st.seerSpent), content));
+    if (!st.holders[r].length) lines.push(line(roleIcon(r), true, t("roleOut", name)));
+    for (const id of st.holders[r]) {
+      const pick = acts[id];
+      let content;
+      if (st.idle(r, id)) content = r === "gravedigger" && !grave ? t("graveNobodyLine", playerName(id)) : t("seerSpentLine", playerName(id));
+      else if (pick === SKIP) content = t("seerSkipsLine", playerName(id));
+      else if (!pick) content = t("waitingFor", playerName(id), name);
+      else if (r === "seer") content = t("seerLooked", playerName(id), playerName(pick), visionText(seerVision(roles, pick, rules(), cursed())));
+      else if (r === "gravedigger") content = t("graveDugLine", playerName(id), visionText(graveFinding(roles, grave, cursed(), true)));
+      else if (r === "mime") content = t("mimeLine", playerName(id), playerName(pick), roleName(mimeCopy(roles, pick, cursed(), true)));
+      else content = t("actionLine", playerName(id), t(`verb_${r}`), playerName(pick));
+      lines.push(line(roleIcon(r), st.idle(r, id) || !!pick, content));
+    }
   }
 
   phaseCard("night", nightTitle(g.round),
@@ -878,6 +926,28 @@ function playerNight() {
       text(t("keepVision")),
       footer());
   }
+  if (myRole === "mime" && g.round === 1) {
+    return phaseCard("night", title, text(t("mimePrompt")),
+      confirmedChoice(others, myAction, (id) => t("confirmAction", t("verb_mime"), playerName(id)), act, { final: true }),
+      myAction && text(t("mimeWait"), "muted small"),
+      footer());
+  }
+  if (myRole === "gravedigger") {
+    const grave = graveTarget(logEntries(), g.round);
+    if (!grave || graveSpent(uid, g.round)) return decoy(text(grave ? t("graveSpent") : t("graveNobody")));
+    if (myAction === SKIP) return phaseCard("night", title, text(t("seerSkipped")), footer());
+    if (myAction !== DIG) {
+      return phaseCard("night", title, text(t("gravePrompt", playerName(grave))),
+        action([roleIcon("gravedigger"), t("graveDig", playerName(grave))], run(() => act(DIG))),
+        rules().gravediggerUses === "once" && action(t("seerSkip"), run(() => act(SKIP)), { cls: "secondary" }),
+        footer());
+    }
+    const found = graves[g.round];
+    return phaseCard("night", title,
+      found ? el("p", { class: "vision" + (found.wolf ? " wolf" : "") }, visionText(found)) : text(t("spiritsAnswering")),
+      text(t("keepVision")),
+      footer());
+  }
   if (myRole === "magician" || myRole === "medium") {
     const r = rules();
     const options = myRole === "medium" ? others
@@ -893,7 +963,7 @@ function playerNight() {
 function hybridPlayerNight() {
   const g = game();
   const called = !isDead(uid) && ((g.step === "wolves" && myRole === "wolf" && wolvesAct(rules(), g.round))
-    || (NIGHT_ROLES.includes(g.step) && g.step === myRole));
+    || (ACTING_ROLES.includes(g.step) && g.step === myRole));
   return called ? playerNight() : livePlayerNight();
 }
 
@@ -921,6 +991,7 @@ function nightNews() {
       deaths.length ? news : t("newsNobody")),
     // only on the bitten prole's own phone
     bittenRound === g.round && bittenNews(),
+    mimedTarget && g.round === 1 && el("p", { class: "news with-icon" }, roleIcon(myRole), t("mimedNews", playerName(mimedTarget), roleName(myRole))),
   ];
 }
 
@@ -966,7 +1037,7 @@ function renderDay() {
       { extra: voters, right: tally })
     : choiceList(shown, master ? null : votes[uid], null, voters, tally);
 
-  const mayorPower = canVote && myRole === "mayor" && mayorCanDecide(rules(), g.mayorUsed);
+  const mayorPower = canVote && myRole === "mayor" && mayorCanDecide(rules(), g.mayorUsed?.[uid]);
   if (mayorPower && decreeMode) {
     return phaseCard("day", title, nightNews(), text(t("decreePrompt")),
       confirmedChoice(candidates.filter((id) => id !== uid), null, (id) => t("confirmDecree", playerName(id)),
@@ -1006,6 +1077,7 @@ function renderOver() {
       const li = playerRow(id, playerName(id));
       li.append(roleBadge(reveal[id]));
       if (g.converted?.[id]) li.lastChild.append(t("exProle"));
+      if (g.mimed?.[id]) li.lastChild.append(t("exMime"));
       return li;
     })),
     suspectBoard(g.suspects),
@@ -1039,9 +1111,11 @@ function renderLog() {
       const detail = nightLog[e.round];
       const secret = [];
       if (nightSecret(detail)) secret.push(describeNight(detail));
-      if (detail?.seen) secret.push(t("logSeer", playerName(detail.seen), detail.seenWolf ? t("aWolf") : t("notAWolf")));
+      for (const l of detail?.looks || []) secret.push(t("logSeer", playerName(l.target), l.wolf ? t("aWolf") : t("notAWolf")));
+      for (const d of detail?.digs || []) secret.push(t("logGrave", playerName(d.target), d.role ? roleName(d.role) : d.wolf ? t("aWolf") : t("notAWolf")));
+      for (const [id, m] of Object.entries(detail?.mimed || {})) secret.push(t("logMime", playerName(id), playerName(m.target), roleName(m.role)));
       return el("li", {}, t("logNight", e.round),
-        nightDeaths(e).length ? [t(e.victim2 ? "logDied" : "logKilled"), el("strong", {}, andList(nightDeaths(e)))] : t("logNoDeath"),
+        nightDeaths(e).length ? [t(nightDeaths(e).length > 1 ? "logDied" : "logKilled"), el("strong", {}, andList(nightDeaths(e)))] : t("logNoDeath"),
         secret.map((s) => el("span", { class: "secret" }, uiIcon("lock"), s)));
     }
     if (e.runoff) return el("li", {}, t("logRunoff", e.round, listNames(e.runoff)));
@@ -1073,7 +1147,7 @@ function renderSettings() {
     el("div", { class: "role-title" }, group === "vote" ? [uiIcon("scales"), t("group_vote")] : [roleIcon(group), roleName(group)],
       ROLES[group] && teamBadge(ROLES[group].team)),
     ...keys.map((key) => {
-      const desc = typeof DEFAULT_RULES[key] === "boolean" ? t(`rule_${key}_desc`) : "";
+      const desc = typeof DEFAULT_RULES[key] === "boolean" || key === "seerSees" ? t(`rule_${key}_desc`) : "";
       const label = el("span", { class: "rule-text" }, t(`rule_${key}`), desc && el("small", {}, desc));
       if (typeof DEFAULT_RULES[key] === "boolean") {
         const input = el("input", { type: "checkbox", disabled: !editable, onchange: (e) => save(key, e.target.checked) });
@@ -1135,16 +1209,27 @@ function answerSeer() {
   const g = game();
   if (g?.phase !== "night" || !secretsFresh(g)) return;
   const roles = secrets.roles || {};
-  const [seer] = livingWithRole(roles, alive(), "seer");
-  const target = seer && secrets.actions?.[seer];
-  if (!target || target === SKIP || secrets.visions?.[seer]?.[g.round] || seerSpent(seer, g.round)) return;
-  const key = `${g.round}:${seer}`;
-  if (visionKey === key) return;
-  visionKey = key;
-  update(ref(db), {
-    [`secrets/${code}/visions/${seer}/${g.round}`]: seerVision(roles, target, rules(), cursed()),
-    [`secrets/${code}/memo/${seer}/used`]: true,
-  }).catch(() => { visionKey = null; });
+  const answer = (key, writes) => {
+    if (answering.has(key)) return;
+    answering.add(key);
+    update(ref(db), writes).catch(() => answering.delete(key));
+  };
+  for (const seer of livingWithRole(roles, alive(), "seer")) {
+    const target = secrets.actions?.[seer];
+    if (!target || target === SKIP || secrets.visions?.[seer]?.[g.round] || seerSpent(seer, g.round)) continue;
+    answer(`seer:${g.round}:${seer}`, {
+      [`secrets/${code}/visions/${seer}/${g.round}`]: seerVision(roles, target, rules(), cursed()),
+      [`secrets/${code}/memo/${seer}/used`]: true,
+    });
+  }
+  // the gravedigger digs up yesterday's executed player: on phones they learn the exact role
+  const grave = graveTarget(logEntries(), g.round);
+  for (const digger of livingWithRole(roles, alive(), "gravedigger")) {
+    if (!grave || secrets.actions?.[digger] !== DIG || secrets.graves?.[digger]?.[g.round]) continue;
+    answer(`grave:${g.round}:${digger}`, {
+      [`secrets/${code}/graves/${digger}/${g.round}`]: graveFinding(roles, grave, cursed(), true),
+    });
+  }
 }
 
 // ---------- masterless remote: automatic steps (host's phone only) ----------
@@ -1154,9 +1239,7 @@ function autoAdvance() {
   if (!g || g.mode !== "remote" || !secrets) return cancelAuto();
   if (g.phase === "night") {
     if (!secretsFresh(g)) return cancelAuto();
-    const [seer] = livingWithRole(secrets.roles || {}, alive(), "seer");
-    const st = nightStatus(secrets.roles || {}, alive(), secrets.wolfVotes || {}, secrets.actions || {},
-      { rules: rules(), round: g.round, seerUsed: seer ? seerUsed(seer, g.round) : false });
+    const st = statusFromSecrets(g.round);
     // the key includes the choices, so a change during the pause restarts it
     if (st.complete && allConfirmed()) {
       return scheduleAuto(`night:${g.round}:${JSON.stringify([secrets.wolfVotes, secrets.actions])}`, AUTO_NIGHT_DELAY, resolveNightNow);
@@ -1208,11 +1291,13 @@ function syncSecrets() {
     visions = {};
     memo = {};
     masons = null;
+    graves = {};
+    mimedTarget = null;
     bittenRound = null;
     suspects = {};
     secrets = null;
     revealed = false;
-    visionKey = null;
+    answering.clear();
     cancelAuto();
     if (lobby?.game?.phase !== "setup") setup = null;
     return;
@@ -1222,11 +1307,13 @@ function syncSecrets() {
   if (isMaster()) return;
   subscribe("role", `secrets/${code}/roles/${uid}`, (val) => {
     myRole = val;
+    if (myRole === "damned") subscribe("pack", `secrets/${code}/wolves`, (w) => { pack = Object.keys(w || {}); renderGame(); });
     if (myRole === "wolf") {
       subscribe("pack", `secrets/${code}/wolves`, (w) => { pack = Object.keys(w || {}); renderGame(); });
       subscribe("wolfVotes", `secrets/${code}/wolfVotes`, (v) => { wolfVotes = v || {}; renderGame(); });
-    } else if (NIGHT_ROLES.includes(myRole)) {
+    } else if (ACTING_ROLES.includes(myRole)) {
       subscribe("action", `secrets/${code}/actions/${uid}`, (v) => { myAction = v; renderGame(); });
+      if (myRole === "gravedigger") subscribe("graves", `secrets/${code}/graves/${uid}`, (v) => { graves = v || {}; renderGame(); });
       if (myRole === "seer") subscribe("visions", `secrets/${code}/visions/${uid}`, (v) => { visions = v || {}; renderGame(); });
       if (myRole === "magician") subscribe("memo", `secrets/${code}/memo/${uid}`, (v) => { memo = v || {}; renderGame(); });
     } else if (myRole === "mason") {
@@ -1235,6 +1322,7 @@ function syncSecrets() {
     if (myRole !== "wolf" || bittenRound) {
       subscribe("converted", `secrets/${code}/converted/${uid}`, (r) => { bittenRound = r || null; renderGame(); });
     }
+    subscribe("mimed", `secrets/${code}/mimed/${uid}`, (v) => { mimedTarget = v || null; renderGame(); });
     if (game()?.mode === "remote") subscribe("suspects", `secrets/${code}/suspects/${uid}`, (v) => { suspects = v || {}; renderGame(); });
     renderGame();
   });
@@ -1414,7 +1502,7 @@ async function assignRoles() {
     [`lobbies/${code}/votes`]: null,
     [`lobbies/${code}/seen`]: null,
     [`lobbies/${code}/game`]: {
-      phase: "assigned", mode: roomMode(), rules: rules(), counts, startedAt: Date.now(), round: 0,
+      phase: "assigned", mode: roomMode(), rules: roomMode() === "live" ? { ...rules(), seerSees: "team" } : rules(), counts, startedAt: Date.now(), round: 0,
       alive: Object.fromEntries(ids.map((id) => [id, true])),
     },
   });
@@ -1443,7 +1531,9 @@ function startNight() {
  */
 const secretsFresh = (g) => secrets?.nightLog?.[g.round]?.reason === "pending";
 
-const lastProtected = (round) => secrets?.nightLog?.[round - 1]?.protected || null;
+/** Who a magician protected last night (they may not repeat it, depending on the rules). */
+const lastProtectedBy = (id) => secrets?.memo?.[id]?.lastProtected || null;
+const lastProtectedAll = () => Object.fromEntries(Object.entries(secrets?.memo || {}).map(([id, m]) => [id, m?.lastProtected || null]));
 
 const cursed = () => secrets?.cursed || {};
 
@@ -1463,7 +1553,15 @@ function resolveNightFromSecrets(round, pending = {}) {
     if (key === `secrets/${code}/wolfVotes`) wolfVotes = val || {};
   }
   return resolveNight(nightRoles(round), alive(), wolfVotes, actions,
-    { rules: rules(), round, lastProtected: lastProtected(round), cursed: cursed() });
+    { rules: rules(), round, lastProtected: lastProtectedAll(), cursed: cursed() });
+}
+
+/** Who still has to act tonight (controller). */
+function statusFromSecrets(round) {
+  return nightStatus(secrets.roles || {}, alive(), secrets.wolfVotes || {}, secrets.actions || {}, {
+    rules: rules(), round, seerUsed: (id) => seerUsed(id, round),
+    graveTarget: graveTarget(logEntries(), round), graveUsed: (id) => graveUsed(id, round),
+  });
 }
 
 /** Writes that turn tonight's bitten prole into a wolf, and undo a turn the night no longer causes (or every turn, if `!keep`). */
@@ -1511,21 +1609,40 @@ function resolveNightNow() {
   const roles = nightRoles(g.round);
   const acts = secrets.actions || {};
   const res = resolveNightFromSecrets(g.round);
-  const [seer] = livingWithRole(roles, alive(), "seer");
-  const [magician] = livingWithRole(roles, alive(), "magician");
-  const seen = seer && acts[seer] !== SKIP ? acts[seer] : null;
+  const looks = livingWithRole(roles, alive(), "seer").filter((id) => acts[id] && acts[id] !== SKIP)
+    .map((id) => ({ seer: id, target: acts[id], wolf: seerVision(roles, acts[id], rules(), cursed()).wolf }));
+  const digs = livingWithRole(roles, alive(), "gravedigger").filter((id) => secrets.graves?.[id]?.[g.round])
+    .map((id) => ({ by: id, ...secrets.graves[id][g.round] }));
+  // first night: each mime takes the role of the player they chose (in live games only wolf or citizen)
+  const mimes = g.round === 1 ? livingWithRole(roles, alive(), "mime").filter((id) => acts[id] && acts[id] !== id) : [];
+  const copies = Object.fromEntries(mimes.map((id) => [id, mimeCopy(roles, acts[id], cursed(), g.mode !== "live")]));
   const updates = {
-    [`secrets/${code}/nightLog/${g.round}`]: compact({ ...res, seen, seenWolf: seen ? seerVision(roles, seen, rules(), cursed()).wolf : null }),
+    [`secrets/${code}/nightLog/${g.round}`]: compact({
+      ...res, looks: looks.length ? looks : null, digs: digs.length ? digs : null,
+      mimed: mimes.length ? Object.fromEntries(mimes.map((id) => [id, { target: acts[id], role: copies[id] }])) : null,
+    }),
   };
-  if (magician) updates[`secrets/${code}/memo/${magician}`] = compact({ lastProtected: res.protected });
+  for (const m of livingWithRole(roles, alive(), "magician")) {
+    updates[`secrets/${code}/memo/${m}`] = compact({ lastProtected: res.protected.includes(acts[m]) ? acts[m] : null });
+  }
+  let rolesAfter = { ...roles };
+  for (const id of mimes) {
+    rolesAfter[id] = copies[id];
+    updates[`secrets/${code}/roles/${id}`] = copies[id];
+    updates[`secrets/${code}/mimed/${id}`] = acts[id];
+    if (copies[id] === "wolf") updates[`secrets/${code}/wolves/${id}`] = true;
+    if (copies[id] === "mason") updates[`secrets/${code}/masons/${id}`] = true;
+  }
   // the bitten prole joins the pack from now on (in live games this already happened at their step)
   Object.assign(updates, conversionUpdates(g.round));
-  const rolesAfter = res.converted ? { ...roles, [res.converted]: "wolf" } : roles;
-  const won = outcome(updates, { type: "night", round: g.round, victim: res.victims[0], victim2: res.victims[1] }, res.victims, "night", rolesAfter);
-  if (won && res.converted) {
-    const converted = { ...(secrets.converted || {}), [res.converted]: g.round };
-    updates[gamePath("converted")] = converted;
-    if (secrets.suspects) updates[gamePath("suspects")] = suspectStats(secrets.suspects, rolesAfter, converted);
+  if (res.converted) rolesAfter = { ...rolesAfter, [res.converted]: "wolf" };
+  const won = outcome(updates, { type: "night", round: g.round, victims: res.victims }, res.victims, "night", rolesAfter);
+  if (won) {
+    const converted = res.converted ? { ...(secrets.converted || {}), [res.converted]: g.round } : secrets.converted;
+    if (converted) updates[gamePath("converted")] = converted;
+    const mimed = { ...(secrets.mimed || {}), ...Object.fromEntries(mimes.map((id) => [id, acts[id]])) };
+    if (Object.keys(mimed).length) updates[gamePath("mimed")] = mimed;
+    if (secrets.suspects) updates[gamePath("suspects")] = suspectStats(secrets.suspects, rolesAfter, converted || {});
   }
   if (!won) {
     updates[gamePath("phase")] = "day";
@@ -1558,8 +1675,8 @@ function applyVoteResult(result) {
   const mayor = result.mayor || null;
   const entry = { type: "vote", round: g.round, ballot: vote.ballot, eliminated, drawn, mayor, votes: result.counts?.[eliminated] };
   if (mayor) {
-    updates[gamePath("mayorUsed")] = true;
-    updates[gamePath("mayor")] = mayor; // everyone now knows who the mayor is
+    updates[gamePath(`mayorUsed/${mayor}`)] = true;
+    updates[gamePath(`mayors/${mayor}`)] = true; // everyone now knows who the mayor is
   }
   updates[`lobbies/${code}/decree`] = null;
   const won = outcome(updates, entry, eliminated, "vote");
@@ -1572,7 +1689,7 @@ function applyDecree() {
   const g = game();
   if (g?.phase !== "day" || g.vote?.done || !secrets) return;
   const [[by, target] = []] = Object.entries(lobby.decree || {});
-  if (!by || secrets.roles?.[by] !== "mayor" || !mayorCanDecide(rules(), g.mayorUsed)) return;
+  if (!by || secrets.roles?.[by] !== "mayor" || !mayorCanDecide(rules(), g.mayorUsed?.[by])) return;
   const key = `${g.round}:${g.vote?.ballot}:${by}`;
   if (decreeKey === key) return;
   decreeKey = key;

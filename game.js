@@ -2,17 +2,21 @@
 
 export const ROLES = {
   wolf: { team: "wolves", min: 1 },
+  damned: { team: "wolves", max: 1 },   // wins with the wolves and knows them, but isn't one: no kills, counts as a villager
   seer: { team: "village", max: 1 },
+  gravedigger: { team: "village", max: 1 }, // learns the role of yesterday's executed player
   magician: { team: "village", max: 1 },
-  medium: { team: "village", max: 1 },
+  medium: { team: "village", max: 1 },   // the night-walker (sonnambulo): only the name changed
+  mime: { team: "village", max: 1 },     // on the first night copies another player's role
   mason: { team: "village", group: 2 },  // none, or at least two: they know each other
   prole: { team: "village", max: 1 },    // becomes a wolf if the wolves kill them
   mayor: { team: "village", max: 1 },    // may decide the day's vote alone
   citizen: { team: "village" },
 };
-export const SPECIAL_ROLES = ["wolf", "seer", "magician", "medium", "mason", "prole", "mayor"]; // citizens fill the remaining slots
+export const SPECIAL_ROLES = ["wolf", "damned", "seer", "magician", "medium", "gravedigger", "mime", "mason", "prole", "mayor"]; // citizens fill the remaining slots
 export const ROLE_ORDER = [...SPECIAL_ROLES, "citizen"];
-export const NIGHT_ROLES = ["seer", "magician", "medium"]; // roles that pick a player at night (besides the wolves)
+export const NIGHT_ROLES = ["seer", "magician", "medium"]; // roles that pick a player every night (besides the wolves)
+export const ACTING_ROLES = [...NIGHT_ROLES, "mime", "gravedigger"]; // ... plus the mime (first night) and the gravedigger (no pick)
 
 /** House rules each group can change. The defaults are the rules the app was first built with. */
 export const DEFAULT_RULES = {
@@ -20,6 +24,7 @@ export const DEFAULT_RULES = {
   wolvesWin: "parity",      // "parity": wolves win when as many as the others; "majority": only when more
   seerSees: "team",         // "team": wolf or not; "role": the exact role
   seerUses: "every",        // "every" night, or "once" per game (the seer picks the night, and may skip)
+  gravediggerUses: "every", // the gravedigger digs "every" night, or "once" per game
   magicianSelf: false,      // the magician may protect their own house
   magicianRepeat: true,     // the magician may protect the same house two nights in a row
   mediumAwayDies: true,     // wolves attack the medium's own house while the medium is visiting elsewhere: the medium dies
@@ -37,6 +42,7 @@ export const RULE_OPTIONS = {
   wolvesWin: ["parity", "majority"],
   seerSees: ["team", "role"],
   seerUses: ["every", "once"],
+  gravediggerUses: ["every", "once"],
   secondTie: ["none", "random"],
   reveal: ["none", "voted", "all"],
   masonsWake: ["first", "every"],
@@ -55,8 +61,8 @@ export function suggestedCounts(n) {
   const medium = n >= 6 ? 1 : 0;
   const mason = n >= 10 ? 2 : 0;
   const prole = n >= 12 ? 1 : 0;
-  const mayor = 0; // optional: the master adds one if they like
-  return { wolf, seer, magician, medium, mason, prole, mayor, citizen: n - wolf - seer - magician - medium - mason - prole - mayor };
+  const optional = { damned: 0, gravedigger: 0, mime: 0, mayor: 0 }; // the master adds them if they like
+  return { wolf, seer, magician, medium, mason, prole, ...optional, citizen: n - wolf - seer - magician - medium - mason - prole };
 }
 
 export const maxWolves = (n) => Math.ceil(n / 2) - 1; // wolves must start as a minority
@@ -97,15 +103,16 @@ export function wolfTarget(roles, alive, wolfVotes = {}) {
   return { target: agreed ? picks[0] : null, agreed, waiting: wolves.filter((id) => !wolfVotes[id]) };
 }
 
-/** Players the magician may protect tonight. */
-export function protectable(roles, alive, rules, lastProtected = null) {
+/** Players a magician may protect tonight (`lastProtected`: their choice last night). */
+export function protectable(roles, alive, rules, lastProtected = null, magician = null) {
   const r = withDefaults(rules);
-  const [magician] = livingWithRole(roles, alive, "magician");
   return aliveIds(alive).filter((id) => (r.magicianSelf || id !== magician) && (r.magicianRepeat || id !== lastProtected));
 }
 
-/** The seer's choice when they keep their power for another night ("once per game" rule). */
+/** The seer's (or gravedigger's) choice when they keep their power for another night ("once per game" rule). */
 export const SKIP = "skip";
+/** The gravedigger's action: dig up yesterday's executed player. */
+export const DIG = "dig";
 
 /** Whether the seer may still look tonight: always, unless the power is once per game and already used. */
 export const seerCanLook = (rules, usedBefore) => withDefaults(rules).seerUses !== "once" || !usedBefore;
@@ -113,15 +120,29 @@ export const seerCanLook = (rules, usedBefore) => withDefaults(rules).seerUses !
 /** True if the seer had a vision in a night before `round`. `visions` is { round: vision }. */
 export const seerUsedBefore = (visions, round) => Object.keys(visions || {}).some((r) => Number(r) < round && visions[r]);
 
-/** Night status per role, used to tell who still has to act. */
-export function nightStatus(roles, alive, wolfVotes = {}, actions = {}, { rules, round = 1, seerUsed = false } = {}) {
+/** Whether the gravedigger may still dig tonight: every night, or once per game. */
+export const graveCanDig = (rules, usedBefore) => withDefaults(rules).gravediggerUses !== "once" || !usedBefore;
+
+/** Who the gravedigger can dig up tonight: the player eliminated by yesterday's vote, if any. `log`: game log entries. */
+export function graveTarget(log = [], round) {
+  const entry = log.filter((e) => e.type === "vote" && e.round === round - 1 && e.eliminated).pop();
+  return entry ? entry.eliminated : null;
+}
+
+/**
+ * Night status, used to tell who still has to act. Every role is a list of living holders (the mime may duplicate one).
+ * `seerUsed(id)` / `graveUsed(id)`: whether that player already used a once-per-game power before tonight.
+ */
+export function nightStatus(roles, alive, wolfVotes = {}, actions = {},
+  { rules, round = 1, seerUsed = () => false, graveTarget: grave = null, graveUsed = () => false } = {}) {
   const wolves = wolfTarget(roles, alive, wolfVotes);
   const wolvesDone = !wolvesAct(rules, round) || wolves.agreed;
-  const holders = Object.fromEntries(NIGHT_ROLES.map((r) => [r, livingWithRole(roles, alive, r)[0] || null]));
-  const seerSpent = !seerCanLook(rules, seerUsed);
-  const done = (r) => !holders[r] || !!actions[holders[r]] || (r === "seer" && seerSpent);
-  const complete = wolvesDone && NIGHT_ROLES.every(done);
-  return { wolves, wolvesDone, ...holders, seerSpent, complete };
+  const holders = Object.fromEntries(ACTING_ROLES.map((r) => [r, livingWithRole(roles, alive, r)]));
+  // holders with nothing to do tonight
+  const idle = (r, id) => (r === "seer" && !seerCanLook(rules, seerUsed(id))) || (r === "mime" && round !== 1)
+    || (r === "gravedigger" && (!grave || !graveCanDig(rules, graveUsed(id))));
+  const complete = wolvesDone && ACTING_ROLES.every((r) => holders[r].every((id) => !!actions[id] || idle(r, id)));
+  return { wolves, wolvesDone, holders, idle, complete };
 }
 
 /** The prole may be dealt openly (role "prole") or hidden as a citizen (listed in `cursed`, which only the controller sees). */
@@ -137,37 +158,53 @@ export function seerVision(roles, target, rules, cursed = {}) {
   return vision;
 }
 
+/** What the gravedigger finds: the exact role on phones, only wolf or not in live games (the master answers with a thumb). */
+export function graveFinding(roles, target, cursed = {}, exact = true) {
+  const role = trueRole(roles, target, cursed);
+  return exact ? { target, wolf: role === "wolf", role } : { target, wolf: role === "wolf" };
+}
+
+/** The role the mime takes from `target` on the first night: the exact one, or in live games only wolf or citizen. */
+export function mimeCopy(roles, target, cursed = {}, exact = true) {
+  const role = trueRole(roles, target, cursed);
+  return exact ? role : role === "wolf" ? "wolf" : "citizen";
+}
+
 /**
- * Resolve the night.
- * - The magician protects a house: nobody in it dies (the medium too, if visiting).
- * - If the wolves attack the house the medium is visiting, the medium dies instead.
- * - If the wolves attack the medium's own house while the medium is away, the rules decide.
- * - House rule: a medium who visits a wolf's house dies there (`extra`), unless the magician protects that house.
+ * Resolve the night. Magicians and mediums may be more than one (the mime can copy them).
+ * - A magician protects a house: nobody in it dies (a medium too, if visiting).
+ * - If the wolves attack a house a medium is visiting, the medium dies instead.
+ * - If the wolves attack a medium's own house while the medium is away, the rules decide.
+ * - House rule: a medium who visits a wolf's house dies there (`extras`), unless a magician protects that house.
  *   With the wolves' own victim, that makes two deaths in one night (`victims`).
+ * `lastProtected`: { magician: who they protected last night }.
  */
-export function resolveNight(roles, alive, wolfVotes = {}, actions = {}, { rules, round = 1, lastProtected = null, cursed = {} } = {}) {
+export function resolveNight(roles, alive, wolfVotes = {}, actions = {}, { rules, round = 1, lastProtected = {}, cursed = {} } = {}) {
   const r = withDefaults(rules);
   const target = wolvesAct(r, round) ? wolfTarget(roles, alive, wolfVotes).target : null;
-  const [magician] = livingWithRole(roles, alive, "magician");
-  const [medium] = livingWithRole(roles, alive, "medium");
-  const pick = magician ? actions[magician] : null;
-  const protectedId = pick && protectable(roles, alive, r, lastProtected).includes(pick) ? pick : null;
-  const visit = medium ? actions[medium] : null;
-  const visitedId = visit && visit !== medium && alive[visit] === true ? visit : null;
+  const protectedIds = livingWithRole(roles, alive, "magician")
+    .map((m) => (actions[m] && protectable(roles, alive, r, lastProtected?.[m], m).includes(actions[m]) ? actions[m] : null))
+    .filter(Boolean);
+  const visits = {}; // medium -> house they visit
+  for (const m of livingWithRole(roles, alive, "medium")) {
+    if (actions[m] && actions[m] !== m && alive[actions[m]] === true) visits[m] = actions[m];
+  }
+  const mediumsAt = (house) => Object.keys(visits).filter((m) => visits[m] === house);
 
-  let victim = null;
+  let victims = [];
   let reason = "no-attack";
   if (!wolvesAct(r, round)) reason = "first-night";
-  else if (target && target === protectedId) reason = "protected";
-  else if (target && target === visitedId) { victim = medium; reason = "medium"; }
-  else if (target && target === medium && visitedId && !r.mediumAwayDies) reason = "medium-away";
+  else if (target && protectedIds.includes(target)) reason = "protected";
+  else if (target && mediumsAt(target).length) { victims = mediumsAt(target); reason = "medium"; }
+  else if (target && visits[target] && !r.mediumAwayDies) reason = "medium-away";
   else if (target && isProle(roles, target, cursed)) reason = "converted"; // the bite turns the prole into a wolf
-  else if (target) { victim = target; reason = "killed"; }
-  const atWolf = r.mediumWolfHouse && visitedId && roles[visitedId] === "wolf" && visitedId !== protectedId;
-  const extra = atWolf && victim !== medium ? medium : null;
+  else if (target) { victims = [target]; reason = "killed"; }
+  const extras = r.mediumWolfHouse
+    ? Object.keys(visits).filter((m) => roles[visits[m]] === "wolf" && !protectedIds.includes(visits[m]) && !victims.includes(m))
+    : [];
   return {
-    attacked: target, protected: protectedId, visited: visitedId, victim, reason, converted: reason === "converted" ? target : null,
-    extra, victims: [victim, extra].filter(Boolean),
+    attacked: target, protected: protectedIds, visits, victim: victims[0] || null, reason,
+    converted: reason === "converted" ? target : null, extras, victims: [...victims, ...extras],
   };
 }
 
@@ -201,7 +238,7 @@ export function closeVote(ballot, votes, alive, candidates = null, rules, random
   return { eliminated: null, runoff: null, counts };
 }
 
-/** Whether the mayor may still decide a vote alone (`used`: they already did once in this game). */
+/** Whether a mayor may still decide a vote alone (`used`: they already did once in this game). */
 export const mayorCanDecide = (rules, used) => withDefaults(rules).mayorUses === "every" || !used;
 
 /** Whether a player's role is shown to everyone when they leave the game. `how`: "vote" or "night". */
@@ -225,7 +262,7 @@ export function winner(roles, alive, rules) {
 /**
  * Remote games: how often each villager's night suspect (the pick made without a night action) was really a wolf.
  * `picks`: { uid: { round: target } }; `converted`: { uid: round } (a bitten prole is a wolf only after that night).
- * Picks made while the picker was a wolf don't count.
+ * Picks made while the picker was a wolf (or by the damned, who knows the wolves) don't count.
  */
 export function suspectStats(picks = {}, roles = {}, converted = {}) {
   const wolfAt = (id, round) => roles[id] === "wolf" && !(converted[id] >= round);
@@ -234,7 +271,7 @@ export function suspectStats(picks = {}, roles = {}, converted = {}) {
     let right = 0;
     let total = 0;
     for (const [round, target] of Object.entries(byRound || {})) {
-      if (!target || wolfAt(id, Number(round))) continue;
+      if (!target || wolfAt(id, Number(round)) || roles[id] === "damned") continue;
       total++;
       if (wolfAt(target, Number(round))) right++;
     }
@@ -253,6 +290,8 @@ export function suspectStats(picks = {}, roles = {}, converted = {}) {
 export function nightSteps(counts = {}, round = 1, rules) {
   const r = withDefaults(rules);
   const masons = counts.mason && (round === 1 || r.masonsWake === "every");
+  const mime = counts.mime && round === 1 ? ["mime"] : [];
+  const grave = counts.gravedigger ? ["gravedigger"] : [];
   const prole = counts.prole ? [r.proleKnows ? "prole" : "check"] : [];
-  return ["sleep", "wolves", ...(masons ? ["masons"] : []), ...NIGHT_ROLES.filter((x) => counts[x]), ...prole, "dawn"];
+  return ["sleep", "wolves", ...(masons ? ["masons"] : []), ...mime, ...NIGHT_ROLES.filter((x) => counts[x]), ...grave, ...prole, "dawn"];
 }
