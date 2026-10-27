@@ -54,15 +54,22 @@ export const withDefaults = (rules) => ({ ...DEFAULT_RULES, ...(rules || {}) });
 
 // ---------- setup ----------
 
+// Balanced starting setups, found by simulating thousands of games for each player count
+// (wolf, seer, magician, medium, masons, prole, damned); everyone else is a citizen.
+const SUGGESTED = {
+  5: [1, 1, 0, 0, 0, 0, 0], 6: [1, 1, 0, 0, 0, 1, 0], 7: [1, 1, 1, 0, 0, 1, 1],
+  8: [2, 1, 1, 1, 0, 0, 0], 9: [2, 1, 1, 1, 0, 1, 0], 10: [2, 1, 1, 1, 2, 1, 0], 11: [2, 1, 1, 1, 2, 0, 1],
+  12: [2, 1, 1, 1, 2, 1, 1], 13: [2, 1, 1, 1, 2, 1, 1], 14: [3, 1, 1, 1, 2, 0, 0], 15: [3, 1, 1, 1, 2, 0, 0],
+  16: [3, 1, 1, 1, 2, 1, 0], 17: [3, 1, 1, 1, 2, 1, 0], 18: [3, 1, 1, 1, 2, 0, 1], 19: [3, 1, 1, 1, 2, 0, 1],
+  20: [3, 1, 1, 1, 2, 1, 1], 21: [3, 1, 1, 1, 2, 1, 1], 22: [4, 1, 1, 1, 2, 0, 0], 23: [4, 1, 1, 1, 2, 0, 0],
+  24: [4, 1, 1, 1, 2, 1, 0], 25: [4, 1, 1, 1, 2, 1, 0], 26: [4, 1, 1, 1, 2, 0, 1], 27: [4, 1, 1, 1, 2, 0, 1],
+  28: [4, 1, 1, 1, 2, 1, 1], 29: [4, 1, 1, 1, 2, 1, 1], 30: [5, 1, 1, 1, 2, 1, 0],
+};
+
 export function suggestedCounts(n) {
-  const wolf = Math.max(1, Math.floor(n / 4));
-  const seer = 1;
-  const magician = 1;
-  const medium = n >= 6 ? 1 : 0;
-  const mason = n >= 10 ? 2 : 0;
-  const prole = n >= 12 ? 1 : 0;
-  const optional = { damned: 0, gravedigger: 0, mime: 0, mayor: 0 }; // the master adds them if they like
-  return { wolf, seer, magician, medium, mason, prole, ...optional, citizen: n - wolf - seer - magician - medium - mason - prole };
+  const [wolf, seer, magician, medium, mason, prole, damned] = SUGGESTED[Math.min(30, Math.max(5, n))];
+  const optional = { gravedigger: 0, mime: 0, mayor: 0 }; // the master adds them if they like
+  return { wolf, seer, magician, medium, mason, prole, damned, ...optional, citizen: n - wolf - seer - magician - medium - mason - prole - damned };
 }
 
 export const maxWolves = (n) => Math.ceil(n / 2) - 1; // wolves must start as a minority
