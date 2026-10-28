@@ -37,6 +37,7 @@ export const DEFAULT_RULES = {
   mayorUses: "once",        // the mayor decides the vote alone "once" per game, or "every" day
   proleKnows: true,         // the prole knows their role (false: they believe they are a citizen until bitten)
   seerSeesProle: "village", // before the bite the seer sees the prole as "village" (not a wolf) or "wolf"
+  notebook: true,           // each player has a private notebook of what they know (false: memory plays its tricks)
 };
 export const RULE_OPTIONS = {
   wolvesWin: ["parity", "majority"],

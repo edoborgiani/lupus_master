@@ -190,6 +190,20 @@
             ".validate": "newData.hasChild('reason')"
           }
         },
+        "notes": {
+          "$uid": {
+            ".read": "auth != null && auth.uid === $uid",
+            "marks": {
+              "$target": {
+                ".write": "auth != null && auth.uid === $uid && root.child('lobbies').child($code).child('game').child('alive').child($uid).exists() && root.child('lobbies').child($code).child('game').child('rules').child('notebook').val() !== false",
+                ".validate": "newData.isString() && newData.val().matches(/^(citizen|wolf|damned|seer|magician|medium|gravedigger|mime|mason|prole|mayor|notWolf)$/) && root.child('lobbies').child($code).child('game').child('alive').child($target).exists()"
+              }
+            },
+            "$key": {
+              ".validate": "newData.hasChildren(['act', 'target'])"
+            }
+          }
+        },
         "$other": {
           ".validate": false
         }

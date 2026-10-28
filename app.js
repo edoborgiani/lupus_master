@@ -31,6 +31,9 @@
 //   secrets/{CODE}/visions/{uid}/{round}  the seer's answers { target, wolf, role? }; readable by the seer
 //   secrets/{CODE}/memo/{uid}         { lastProtected } for the magician, { used } for the seer; readable by its owner
 //   secrets/{CODE}/graves/{uid}/{round}  the gravedigger's findings { target, wolf, role? }; readable by the gravedigger
+//   secrets/{CODE}/notes/{uid}/{key}    the player's own notebook (phone modes), written by the controller:
+//                                       n{round}: { act: kill|protect|visit, target }, d{round}-{ballot}: { act: vote|decree, target };
+//                                       marks/{target}: a role (or "notWolf") the player noted themselves
 //   secrets/{CODE}/mimed/{uid}        who the mime copied on the first night; readable by the mime
 //   secrets/{CODE}/suspects/{uid}/{round}  remote: who the player suspected on a night without an action; readable by its author
 //   secrets/{CODE}/nightLog/{round}   what really happened each night, for the master
@@ -65,7 +68,9 @@ const RULE_GROUPS = [
   ["prole", ["proleKnows", "seerSeesProle"]],
   ["mayor", ["mayorUses"]],
   ["vote", ["secondTie", "selfVote", "reveal", "hybridVote"]],
+  ["notebook", ["notebook"]],
 ];
+const GROUP_ICONS = { vote: "scales", notebook: "book" }; // groups that are not a role
 
 const $ = (sel) => document.querySelector(sel);
 
@@ -133,6 +138,9 @@ const answering = new Set(); // controller: seer/gravedigger answers being writt
 let pendingSel = null;
 let changing = false;
 let suspects = {};        // remote: { round: uid } this player suspected on nights without an action
+let notes = {};           // phone modes: this player's notebook (see secrets/{CODE}/notes)
+let notesOpen = false;    // the notebook is shown, until tapped again
+let marking = null;       // notebook: the player this player is marking with a role
 
 const lobbyRef = (...parts) => ref(db, ["lobbies", code, ...parts].join("/"));
 const nameKey = (name) => encodeURIComponent(name.trim().toLowerCase()).replace(/\./g, "%2E");
@@ -302,7 +310,7 @@ function renderGame() {
     changing = false;
   }
 
-  for (const id of ["card-start", "card-wait", "card-setup", "card-phase", "card-role", "card-master-roles", "card-log"]) {
+  for (const id of ["card-start", "card-wait", "card-setup", "card-phase", "card-role", "card-notes", "card-master-roles", "card-log"]) {
     $(`#${id}`).hidden = true;
   }
   $("#wait-mode").textContent = "";
@@ -342,6 +350,7 @@ function renderGame() {
     wait(t("notInGame"));
   } else {
     renderMyRole();
+    if (rules().notebook) renderNotes();
     ({
       live: { assigned: playerAssigned, night: livePlayerNight, day: livePlayerDay, over: renderOver },
       hybrid: { assigned: playerAssigned, night: hybridPlayerNight, day: phoneVote ? renderDay : livePlayerDay, over: renderOver },
@@ -507,13 +516,86 @@ function renderMyRole() {
     extra = t("theWolvesAre", listNames(pack));
   } else if (myRole === "mason" && masons) {
     extra = t("yourMasons", listNames(masons.filter((id) => id !== uid)));
-  } else if (myRole === "seer") {
+  } else if (myRole === "seer" && rules().notebook) {
     const seen = Object.entries(visions).filter(([, v]) => v).sort(([a], [b]) => a - b);
     extra = seen.length ? t("yourVisions", seen.map(([r, v]) => `${t("nightN", r)}: ${visionText(v)}`).join(" · ")) : "";
   }
   if (mimedTarget) extra = `${t("youMimed", playerName(mimedTarget))} ${extra}`.trim();
   $("#role-pack").textContent = extra;
   $("#game-counts").textContent = game().counts ? t("inThisGame", formatCounts(game().counts)) : "";
+}
+
+// --- the player's notebook: what they know, kept private behind a tap ---
+
+function renderNotes() {
+  $("#card-notes").hidden = false;
+  const btn = $("#btn-notes");
+  btn.setAttribute("aria-expanded", String(notesOpen));
+  $("#notes-body").hidden = !notesOpen;
+  if (!notesOpen) return;
+  const g = game();
+  const findings = [...Object.values(visions), ...Object.values(graves)].filter(Boolean);
+  const marks = (id) => {
+    const shown = new Set([g.revealed?.[id]]);
+    const out = [];
+    const add = (r, b = roleBadge(r)) => { if (!shown.has(r)) { shown.add(r); out.push(b); } };
+    if (id === uid) add(myRole);
+    if (pack?.includes(id)) add("wolf");
+    if (masons?.includes(id)) add("mason");
+    for (const v of findings.filter((f) => f.target === id)) {
+      if (v.role) add(v.role);
+      else if (v.wolf) add("wolf");
+      else add("notWolf", badge(t("noteNotWolf"), "note"));
+    }
+    if (id === mimedTarget) add("mimed", badge(t("noteCopied"), "note"));
+    const mine = notes.marks?.[id];
+    if (mine && id !== uid) add(mine, badge(mine === "notWolf" ? t("noteNotWolf") : [roleIcon(mine), roleName(mine)], "note mine"));
+    return out;
+  };
+  const markRef = (id) => ref(db, `secrets/${code}/notes/${uid}/marks/${id}`);
+  const saveMark = (id, value) => {
+    marking = null;
+    set(markRef(id), value).catch((err) => alert(err.message));
+  };
+  const choices = [...ROLE_ORDER.filter((r) => g.counts?.[r] > 0), "notWolf"];
+  const picker = (id) => el("div", { class: "mark-picker" },
+    el("small", { class: "muted" }, t("markAs", playerName(id))),
+    el("div", { class: "mark-options" },
+      choices.map((r) => el("button", { class: "chip" + (notes.marks?.[id] === r ? " on" : ""), onclick: () => saveMark(id, r) },
+        r === "notWolf" ? t("noteNotWolf") : [roleIcon(r), roleName(r)])),
+      notes.marks?.[id] && el("button", { class: "chip", onclick: () => saveMark(id, null) }, t("markClear"))));
+  const ids = playerIds().filter((id) => alive()[id] !== undefined)
+    .sort((a, b) => (isDead(a) - isDead(b)) || playerName(a).localeCompare(playerName(b)));
+  $("#notes-players").replaceChildren(...ids.map((id) => {
+    const li = playerRow(id, playerName(id));
+    if (g.revealed?.[id]) li.append(roleBadge(g.revealed[id]));
+    else if (g.mayors?.[id]) li.querySelector(".pname").append(roleBadge("mayor"));
+    li.append(...marks(id));
+    if (id !== uid) {
+      li.append(el("button", { class: "link mark-btn", "aria-label": t("markAs", playerName(id)),
+        onclick: () => { marking = marking === id ? null : id; renderGame(); } }, "✎"));
+      if (marking === id) li.append(picker(id));
+    }
+    return li;
+  }));
+  const lines = [];
+  for (let r = 1; r <= (g.round || 1); r++) {
+    const night = [];
+    if (r === 1 && mimedTarget) night.push(t("noteMime", playerName(mimedTarget), roleName(myRole)));
+    const n = notes[`n${r}`];
+    if (n) night.push(t(`note_${n.act}`, playerName(n.target)));
+    if (suspects[r]) night.push(t("note_suspect", playerName(suspects[r])));
+    if (visions[r]) night.push(t("noteSeer", visionText(visions[r])));
+    if (graves[r]) night.push(t("noteGrave", visionText(graves[r])));
+    if (bittenRound === r) night.push(t("noteBitten"));
+    for (const x of night) lines.push([t("noteNight", r), x]);
+    for (const b of [1, 2]) {
+      const d = notes[`d${r}-${b}`];
+      if (d) lines.push([t("noteDay", r), t(`note_${d.act}`, playerName(d.target)) + (b === 2 ? t("noteRunoff") : "")]);
+    }
+  }
+  $("#notes-log").replaceChildren(...(lines.length ? lines.map(([when, what]) => el("li", {}, el("strong", {}, when), " ", what))
+    : [el("li", { class: "muted" }, t("notesEmpty"))]));
 }
 
 function renderMasterRoles() {
@@ -1144,7 +1226,7 @@ function renderSettings() {
   const r = rules();
   const save = (key, value) => set(lobbyRef("settings", "rules", key), value).catch((err) => alert(err.message));
   list.replaceChildren(...RULE_GROUPS.map(([group, keys]) => el("div", { class: "rule-tile" },
-    el("div", { class: "role-title" }, group === "vote" ? [uiIcon("scales"), t("group_vote")] : [roleIcon(group), roleName(group)],
+    el("div", { class: "role-title" }, GROUP_ICONS[group] ? [uiIcon(GROUP_ICONS[group]), t(`group_${group}`)] : [roleIcon(group), roleName(group)],
       ROLES[group] && teamBadge(ROLES[group].team)),
     ...keys.map((key) => {
       const desc = typeof DEFAULT_RULES[key] === "boolean" || key === "seerSees" ? t(`rule_${key}_desc`) : "";
@@ -1295,8 +1377,11 @@ function syncSecrets() {
     mimedTarget = null;
     bittenRound = null;
     suspects = {};
+    notes = {};
     secrets = null;
     revealed = false;
+    notesOpen = false;
+    marking = null;
     answering.clear();
     cancelAuto();
     if (lobby?.game?.phase !== "setup") setup = null;
@@ -1323,6 +1408,7 @@ function syncSecrets() {
       subscribe("converted", `secrets/${code}/converted/${uid}`, (r) => { bittenRound = r || null; renderGame(); });
     }
     subscribe("mimed", `secrets/${code}/mimed/${uid}`, (v) => { mimedTarget = v || null; renderGame(); });
+    if (rules().notebook) subscribe("notes", `secrets/${code}/notes/${uid}`, (v) => { notes = v || {}; renderGame(); });
     if (game()?.mode === "remote") subscribe("suspects", `secrets/${code}/suspects/${uid}`, (v) => { suspects = v || {}; renderGame(); });
     renderGame();
   });
@@ -1622,6 +1708,14 @@ function resolveNightNow() {
       mimed: mimes.length ? Object.fromEntries(mimes.map((id) => [id, { target: acts[id], role: copies[id] }])) : null,
     }),
   };
+  if (rules().notebook) {
+    const did = { magician: "protect", medium: "visit" };
+    for (const id of aliveIds(alive())) {
+      const target = roles[id] === "wolf" ? res.attacked : did[roles[id]] && acts[id];
+      const act = roles[id] === "wolf" ? "kill" : did[roles[id]];
+      if (target) updates[`secrets/${code}/notes/${id}/n${g.round}`] = { act, target };
+    }
+  }
   for (const m of livingWithRole(roles, alive(), "magician")) {
     updates[`secrets/${code}/memo/${m}`] = compact({ lastProtected: res.protected.includes(acts[m]) ? acts[m] : null });
   }
@@ -1664,6 +1758,12 @@ function applyVoteResult(result) {
   const g = game();
   const vote = g.vote || { ballot: 1 };
   const updates = {};
+  if (rules().notebook) {
+    for (const [voter, target] of Object.entries(lobby.votes || {})) {
+      if (alive()[voter] && alive()[target] !== undefined) updates[`secrets/${code}/notes/${voter}/d${g.round}-${vote.ballot}`] = { act: "vote", target };
+    }
+    if (result.mayor) updates[`secrets/${code}/notes/${result.mayor}/d${g.round}-${vote.ballot}`] = { act: "decree", target: result.eliminated };
+  }
   if (result.runoff) {
     updates[gamePath(`log/${logEntries().length}`)] = { type: "vote", round: g.round, ballot: vote.ballot, runoff: result.runoff };
     updates[gamePath("vote")] = { ballot: 2, candidates: Object.fromEntries(result.runoff.map((id) => [id, true])) };
@@ -1789,6 +1889,11 @@ function bindEvents() {
   $("#btn-reveal").addEventListener("click", () => {
     revealed = !revealed;
     if (revealed && !hasSeen(uid)) set(lobbyRef("seen", uid), true).catch(() => {});
+    renderGame();
+  });
+
+  $("#btn-notes").addEventListener("click", () => {
+    notesOpen = !notesOpen;
     renderGame();
   });
 

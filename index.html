@@ -139,6 +139,19 @@
         <p class="muted small center" id="game-counts"></p>
       </div>
 
+      <!-- Player (phone modes): private notebook of what they know, hidden until tapped -->
+      <div class="card" id="card-notes" hidden>
+        <button class="notes-toggle" id="btn-notes" aria-expanded="false" aria-controls="notes-body">
+          <img class="ri" src="icons/ui/book.svg" alt="">
+          <span><strong data-i18n="notesTitle"></strong><small data-i18n="notesHint"></small></span>
+        </button>
+        <div id="notes-body" hidden>
+          <ul id="notes-players" class="plain-list"></ul>
+          <ol id="notes-log"></ol>
+          <p class="muted small center" data-i18n="notesPrivate"></p>
+        </div>
+      </div>
+
       <!-- Master: everyone's role -->
       <div class="card" id="card-master-roles" hidden>
         <div class="list-head">
