@@ -153,6 +153,8 @@ const controllerId = () => lobby?.masterId || lobby?.hostId || null;
 const isController = () => !!uid && controllerId() === uid;
 const isHostOnly = () => isController() && !isMaster(); // masterless remote: the host also plays
 const playerIds = () => Object.keys(players()).filter((id) => id !== lobby.masterId);
+/** Who gets a role: the players online right now (someone whose phone is gone would block the game). */
+const dealIds = () => playerIds().filter((id) => isOnline(id));
 const playerName = (id) => players()[id]?.name || game()?.names?.[id] || t("left"); // names stay in the game when someone leaves
 const listNames = (ids) => ids.map(playerName).join(", ");
 const game = () => lobby?.game || null;
@@ -299,7 +301,7 @@ function renderGame() {
   const ctrl = isController();
   const phase = g?.phase || null;
   const playing = PLAYING.includes(phase);
-  const n = playerIds().length;
+  const n = phase === "setup" ? dealIds().length : playerIds().length;
 
   const key = `${phase}:${g?.round}:${g?.step}:${g?.vote?.ballot}:${g?.vote?.done}`;
   if (key !== stepKey) {
@@ -333,7 +335,7 @@ function renderGame() {
     if (ctrl) renderSetup(n, modeLabel);
     else {
       wait(lobby.masterId ? t("masterChoosing") : t("hostChoosing", playerName(lobby.hostId)));
-      $("#wait-mode").textContent = t("chosenMode", modeLabel);
+      $("#wait-mode").textContent = [redealNotice(), t("chosenMode", modeLabel)].filter(Boolean).join(" ");
     }
     return;
   }
@@ -404,6 +406,7 @@ function choiceList(ids, selected, onPick, extra = () => null, right = () => nul
  * doesn't know who), the list shows the choice, with a link to change it unless `final`.
  */
 function confirmedChoice(ids, current, confirmLabel, onConfirm, { final = false, extra, right } = {}) {
+  if (pendingSel && !ids.includes(pendingSel)) pendingSel = null; // e.g. the player left the game
   if (current && !changing) {
     return [
       choiceList(ids, current, null, extra, right),
@@ -416,6 +419,7 @@ function confirmedChoice(ids, current, confirmLabel, onConfirm, { final = false,
     action(pendingSel ? confirmLabel(pendingSel) : t("choosePlayer"), run(async () => {
       await onConfirm(pendingSel);
       changing = false;
+      pendingSel = null;
       renderGame();
     }), { disabled: !pendingSel }),
   ];
@@ -458,6 +462,8 @@ function renderSetup(n, modeLabel) {
   $("#setup-total").textContent = t("nPlayers", n);
   $("#setup-mode").textContent = t("chosenMode", modeLabel);
   $("#setup-suggestion").textContent = t("suggested", n, formatCounts(suggestedCounts(n)));
+  const offline = playerIds().filter((id) => !isOnline(id));
+  $("#setup-notice").textContent = [redealNotice(), offline.length ? t("offlineNoRole", listNames(offline)) : ""].filter(Boolean).join(" ");
 
   $("#role-counters").replaceChildren(...ROLE_ORDER.map((r) => {
     const role = ROLES[r];
@@ -1224,7 +1230,7 @@ function renderLog() {
         nightDeaths(e).length ? [t(nightDeaths(e).length > 1 ? "logDied" : "logKilled"), el("strong", {}, andList(nightDeaths(e)))] : t("logNoDeath"),
         secret.map((s) => el("span", { class: "secret" }, uiIcon("lock"), s)));
     }
-    if (e.type === "left") return el("li", {}, t("logLeft", listNames(Object.keys(e.players || {}))));
+    if (e.type === "left") return el("li", {}, t(e.offline ? "logOffline" : "logLeft", listNames(Object.keys(e.players || {}))));
     if (e.runoff) return el("li", {}, t("logRunoff", e.round, listNames(e.runoff)));
     const votes = e.votes != null ? ` (${t("votes", e.votes)})` : "";
     return el("li", {}, t("logDay", e.round),
@@ -1675,7 +1681,7 @@ async function leaveLobby() {
 const gamePath = (key) => `lobbies/${code}/game/${key}`;
 
 async function assignRoles() {
-  const ids = playerIds();
+  const ids = dealIds();
   const counts = Object.fromEntries(ROLE_ORDER.map((r) => [r, setup[r]]));
   const err = setupError(counts, ids.length);
   if (err) throw new Error(t(`err_${err}`, maxWolves(ids.length), ids.length));
@@ -1909,14 +1915,16 @@ function applyDecree() {
 
 /** Controller: players who left the room during the game are out of it (the game might end there). */
 let leaversKey = null;
-function dropLeavers(ids = aliveIds(alive()).filter((id) => !players()[id])) {
+function dropLeavers(ids = aliveIds(alive()).filter((id) => !players()[id]), offline = false) {
   const g = game();
   if (!ids.length || !["assigned", "night", "day"].includes(g?.phase)) return Promise.resolve();
-  const key = `${g.round}:${ids.join(",")}`;
+  const key = `${g.phase}:${g.round}:${ids.join(",")}`;
   if (leaversKey === key) return Promise.resolve();
   leaversKey = key;
+  if (g.phase === "assigned") return redeal(ids, offline).catch(() => { leaversKey = null; });
   const updates = {};
-  const won = outcome(updates, { type: "left", round: g.round || 0, players: Object.fromEntries(ids.map((id) => [id, true])) }, ids, "left");
+  const entry = { type: "left", round: g.round || 0, offline: offline || null, players: Object.fromEntries(ids.map((id) => [id, true])) };
+  const won = outcome(updates, entry, ids, "left");
   for (const id of ids) updates[`lobbies/${code}/votes/${id}`] = null;
   // whoever had picked a player who left must choose again (tonight's targets, today's votes)
   const gone = (target) => ids.includes(target);
@@ -1933,8 +1941,39 @@ function dropLeavers(ids = aliveIds(alive()).filter((id) => !players()[id])) {
       updates[`lobbies/${code}/nightDone/${by}`] = null;
     }
   }
-  if (won) updates[`lobbies/${code}/votes`] = null;
-  return update(ref(db), updates).catch(() => { leaversKey = null; });
+  if (won) { // the game is over: drop the whole vote (a path and its children can't be in one update)
+    for (const k of Object.keys(updates)) if (k.startsWith(`lobbies/${code}/votes/`)) delete updates[k];
+    updates[`lobbies/${code}/votes`] = null;
+  }
+  return Promise.resolve().then(() => update(ref(db), updates)).catch(() => { leaversKey = null; });
+}
+
+/** Someone left before the first night: deal again among those still here (the controller sees the setup again). */
+function redeal(ids, offline) {
+  return update(ref(db), {
+    [`secrets/${code}`]: null, [`lobbies/${code}/seen`]: null, [`lobbies/${code}/votes`]: null, [`lobbies/${code}/tally`]: null,
+    [`lobbies/${code}/game`]: { phase: "setup", redeal: { names: ids.map(playerName), offline: offline || null } },
+  });
+}
+
+const redealNotice = () => {
+  const r = game()?.redeal;
+  return r ? t(r.offline ? "redealOffline" : "redealLeft", r.names.join(", ")) : "";
+};
+
+// remote games: a player offline for a minute is out, like someone who left (the controller's own view decides)
+const playerOffline = {}; // uid -> since when this controller sees them offline
+function dropOffline() {
+  const g = game();
+  if (!isController() || g?.mode !== "remote" || !["assigned", "night", "day"].includes(g.phase)) return;
+  const now = Date.now();
+  const gone = [];
+  for (const id of aliveIds(alive())) {
+    if (id === uid || !players()[id] || isOnline(id)) { delete playerOffline[id]; continue; }
+    playerOffline[id] ??= now;
+    if (now - playerOffline[id] >= OFFLINE_LIMIT) gone.push(id);
+  }
+  if (gone.length) dropLeavers(gone, true);
 }
 
 function endGame() {
@@ -2112,7 +2151,7 @@ async function main() {
   });
 
   bindEvents();
-  setInterval(watchController, 1000); // time passes without any lobby update: keep the countdown going
+  setInterval(() => { watchController(); dropOffline(); }, 1000); // time passes without any lobby update: keep the countdowns going
 
   const urlCode = new URLSearchParams(location.search).get("code");
   const startCode = urlCode || store("lupus.lobby");

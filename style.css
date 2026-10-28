@@ -371,3 +371,4 @@ button.link.mark-btn { width: auto; flex: none; padding: 2px 6px; font-size: 1re
 .chip .ri { width: 18px; height: 18px; }
 .offline-banner { top: 12px; bottom: auto; width: min(calc(100vw - 32px), 440px); border-radius: 12px; text-align: center; background: #3b3220; border: 1px solid #e8b84a; color: var(--text); z-index: 10; }
 .pname .badge.master, .pname .badge.special { margin-left: 8px; }
+#setup-notice:empty { display: none; }
