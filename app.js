@@ -20,7 +20,8 @@
 //   lobbies/{CODE}/seen/{uid}         true once the player has looked at their role
 //   lobbies/{CODE}/game               { phase, mode, rules, counts, round, step, alive, vote, log, revealed, winner, reveal,
 //                                       mayors/{uid} (revealed by using their power), mayorUsed/{uid}, converted, mimed }
-//   lobbies/{CODE}/votes/{uid}        remote day vote: uid voted against (public, like pointing)
+//   lobbies/{CODE}/votes/{uid}        phone day vote: uid voted against (public, like pointing), or just true with a secret vote
+//   lobbies/{CODE}/tally/{uid}        secret vote shown as running totals: votes against uid, written by the controller
 //   lobbies/{CODE}/nightDone/{uid}    remote: true once the player has confirmed tonight's pick
 //   lobbies/{CODE}/decree/{uid}       phone vote: the mayor decides alone who is eliminated (this reveals them)
 // Secret data, readable only by the controller (and per database.rules.json):
@@ -31,6 +32,7 @@
 //   secrets/{CODE}/visions/{uid}/{round}  the seer's answers { target, wolf, role? }; readable by the seer
 //   secrets/{CODE}/memo/{uid}         { lastProtected } for the magician, { used } for the seer; readable by its owner
 //   secrets/{CODE}/graves/{uid}/{round}  the gravedigger's findings { target, wolf, role? }; readable by the gravedigger
+//   secrets/{CODE}/ballots/{uid}      secret vote: uid voted against; readable by the voter
 //   secrets/{CODE}/notes/{uid}/{key}    the player's own notebook (phone modes), written by the controller:
 //                                       n{round}: { act: kill|protect|visit, target }, d{round}-{ballot}: { act: vote|decree, target };
 //                                       marks/{target}: a role (or "notWolf") the player noted themselves
@@ -67,7 +69,7 @@ const RULE_GROUPS = [
   ["mason", ["masonsWake"]],
   ["prole", ["proleKnows", "seerSeesProle"]],
   ["mayor", ["mayorUses"]],
-  ["vote", ["secondTie", "selfVote", "reveal", "hybridVote"]],
+  ["vote", ["secondTie", "selfVote", "reveal", "hybridVote", "voteSecret"]],
   ["notebook", ["notebook"]],
 ];
 const GROUP_ICONS = { vote: "scales", notebook: "book" }; // groups that are not a role
@@ -139,6 +141,7 @@ let pendingSel = null;
 let changing = false;
 let suspects = {};        // remote: { round: uid } this player suspected on nights without an action
 let notes = {};           // phone modes: this player's notebook (see secrets/{CODE}/notes)
+let myBallot = null;      // secret vote: this player's own vote
 let notesOpen = false;    // the notebook is shown, until tapped again
 let marking = null;       // notebook: the player this player is marking with a role
 
@@ -150,7 +153,7 @@ const controllerId = () => lobby?.masterId || lobby?.hostId || null;
 const isController = () => !!uid && controllerId() === uid;
 const isHostOnly = () => isController() && !isMaster(); // masterless remote: the host also plays
 const playerIds = () => Object.keys(players()).filter((id) => id !== lobby.masterId);
-const playerName = (id) => players()[id]?.name || t("left");
+const playerName = (id) => players()[id]?.name || game()?.names?.[id] || t("left"); // names stay in the game when someone leaves
 const listNames = (ids) => ids.map(playerName).join(", ");
 const game = () => lobby?.game || null;
 const alive = () => game()?.alive || {};
@@ -247,8 +250,6 @@ function renderLobby() {
 
   $("#player-list").replaceChildren(...list.map((p) => {
     const li = playerRow(p.id, p.name);
-    if (p.isMaster) li.append(badge(t("master"), "master"));
-    else if (!lobby.masterId && p.id === lobby.hostId) li.append(badge(t("host"), "special"));
     const shown = game()?.revealed?.[p.id];
     if (shown) li.append(roleBadge(shown));
     else if (game()?.mayors?.[p.id]) li.querySelector(".pname").append(roleBadge("mayor")); // revealed by their decision
@@ -273,7 +274,8 @@ function playerRow(id, name) {
   const dot = checking
     ? el("span", { class: "dot" + (hasSeen(id) ? "" : " waiting"), title: hasSeen(id) ? t("seenYes") : t("seenNo") })
     : el("span", { class: "dot" + (isOnline(id) ? "" : " off"), title: isOnline(id) ? t("online") : t("offline") });
-  const li = el("li", { class: isDead(id) ? "dead" : "" }, dot, el("span", { class: "pname" }, name));
+  const runs = id === lobby.masterId ? badge(t("master"), "master") : !lobby.masterId && id === lobby.hostId ? badge(t("host"), "special") : null;
+  const li = el("li", { class: isDead(id) ? "dead" : "" }, dot, el("span", { class: "pname" }, name, runs));
   if (id === uid) li.append(badge(t("you"), "you"));
   if (isDead(id)) li.append(uiIcon("skull", { class: "ri skull", alt: t("out"), title: t("out") }));
   return li;
@@ -317,7 +319,6 @@ function renderGame() {
   $("#card-share").hidden = !!g;
   $("#card-players").hidden = playing && master;
   $("#btn-edit").hidden = !!g;
-  $("#btn-leave").hidden = !!g && ctrl;
 
   const modeLabel = t(MODE_LABELS[roomMode()]);
   if (!phase) {
@@ -360,6 +361,8 @@ function renderGame() {
   renderLog();
   if (ctrl && g.mode !== "live") answerSeer();
   if (ctrl) applyDecree();
+  if (ctrl) publishTally();
+  if (ctrl) dropLeavers();
   if (isHostOnly()) autoAdvance();
 }
 
@@ -564,7 +567,7 @@ function renderNotes() {
       choices.map((r) => el("button", { class: "chip" + (notes.marks?.[id] === r ? " on" : ""), onclick: () => saveMark(id, r) },
         r === "notWolf" ? t("noteNotWolf") : [roleIcon(r), roleName(r)])),
       notes.marks?.[id] && el("button", { class: "chip", onclick: () => saveMark(id, null) }, t("markClear"))));
-  const ids = playerIds().filter((id) => alive()[id] !== undefined)
+  const ids = Object.keys(alive()) // everyone in the game, also who has left the room
     .sort((a, b) => (isDead(a) - isDead(b)) || playerName(a).localeCompare(playerName(b)));
   $("#notes-players").replaceChildren(...ids.map((id) => {
     const li = playerRow(id, playerName(id));
@@ -1086,7 +1089,9 @@ function dayResult(title, news, vote) {
       + (shown ? t("wasRole", roleName(shown)) : "")
     : t("nobodyEliminated");
   const next = action(startNightLabel(g.round + 1), run(startNight));
+  const totals = Object.entries(vote.counts || {}).filter(([id, n]) => n > 0 && players()[id]).sort(([, a], [, b]) => b - a);
   return phaseCard("day", title, news, el("p", { class: "news death with-icon" }, uiIcon("scales"), result),
+    totals.length > 0 && text(t("voteTotals", totals.map(([id, n]) => `${playerName(id)} ${n}`).join(" · ")), "muted small"),
     isMaster() ? next : isHostOnly() ? hostTools(next)
       : text(t("waitNight", lobby.masterId ? t("theMaster") : playerName(lobby.hostId))));
 }
@@ -1099,13 +1104,16 @@ function renderDay() {
   const candidates = vote.candidates ? Object.keys(vote.candidates) : living;
   const votes = lobby.votes || {};
   const r = rules();
-  const { counts } = tallyVotes(votes, alive(), vote.candidates || null, r);
+  const secret = r.voteSecret !== "open";
+  const counts = r.voteSecret === "count" ? lobby.tally || {} : secret ? {} : tallyVotes(votes, alive(), vote.candidates || null, r).counts;
+  const mine = secret ? myBallot : votes[uid];
   const voted = votedCount(votes, vote, living);
   const title = dayTitle(g.round);
 
   if (vote.done) return dayResult(title, nightNews(), vote);
 
   const voters = (id) => {
+    if (secret) return null; // a secret vote never shows who voted whom
     const who = Object.keys(votes).filter((v) => votes[v] === id && alive()[v] === true && (v !== id || r.selfVote));
     return who.length ? el("span", { class: "voters" }, listNames(who)) : null;
   };
@@ -1113,11 +1121,13 @@ function renderDay() {
   const shown = candidates
     .filter((id) => !canVote || id !== uid || r.selfVote)
     .sort((a, b) => (counts[b] || 0) - (counts[a] || 0) || playerName(a).localeCompare(playerName(b)));
-  const tally = (id) => el("span", { class: "tally" }, String(counts[id] || 0));
+  const tally = r.voteSecret === "after" ? () => null : (id) => el("span", { class: "tally" }, String(counts[id] || 0));
+  const cast = (id) => (secret
+    ? update(ref(db), { [`secrets/${code}/ballots/${uid}`]: id, [`lobbies/${code}/votes/${uid}`]: true })
+    : set(lobbyRef("votes", uid), id));
   const list = canVote
-    ? confirmedChoice(shown, votes[uid], (id) => t("confirmVote", playerName(id)), (id) => set(lobbyRef("votes", uid), id),
-      { extra: voters, right: tally })
-    : choiceList(shown, master ? null : votes[uid], null, voters, tally);
+    ? confirmedChoice(shown, mine, (id) => t("confirmVote", playerName(id)), cast, { extra: voters, right: tally })
+    : choiceList(shown, master ? null : mine, null, voters, tally);
 
   const mayorPower = canVote && myRole === "mayor" && mayorCanDecide(rules(), g.mayorUsed?.[uid]);
   if (mayorPower && decreeMode) {
@@ -1126,9 +1136,9 @@ function renderDay() {
         (id) => set(lobbyRef("decree", uid), id), { final: true }),
       action(t("cancel"), () => { decreeMode = false; pendingSel = null; renderGame(); }, { cls: "link" }));
   }
-  const intro = vote.ballot === 2 ? t("remoteRunoff", listNames(candidates)) : canVote ? t("remoteVote") : t("watchVote");
+  const intro = vote.ballot === 2 ? t("remoteRunoff", listNames(candidates)) : canVote ? t("remoteVote") : t(secret ? "watchVote" : "watchVoteOpen");
   const everyone = voted === living.length;
-  phaseCard("day", title, nightNews(), text(intro), list,
+  phaseCard("day", title, nightNews(), text(intro), secret && text(t(`secretNote_${r.voteSecret}`), "muted small"), list,
     text(everyone && !lobby.masterId ? t("allVoted") : t("votedCount", voted, living.length), "muted small"),
     master && action([uiIcon("scales"), t("closeVote")], () => {
       if (!everyone && !confirm(t("confirmCloseVote"))) return;
@@ -1143,7 +1153,21 @@ function renderDay() {
 }
 
 const votedCount = (votes, vote, living) =>
-  living.filter((id) => votes[id] && (!vote.candidates || vote.candidates[votes[id]])).length;
+  living.filter((id) => votes[id] === true || (votes[id] && (!vote.candidates || vote.candidates[votes[id]]))).length;
+const secretVote = () => rules().voteSecret !== "open";
+/** Controller: everyone's vote (with a secret vote it lives under secrets, the lobby only says who has voted). */
+const allVotes = () => (secretVote() ? secrets?.ballots || {} : lobby.votes || {});
+/** Wipes the day's votes, before a run-off or a new day. */
+const clearVotes = () => ({ [`lobbies/${code}/votes`]: null, [`lobbies/${code}/tally`]: null, [`secrets/${code}/ballots`]: null });
+
+/** Controller, secret vote shown as totals: publish the running count without the names. */
+function publishTally() {
+  const g = game();
+  if (g?.phase !== "day" || g.vote?.done || rules().voteSecret !== "count" || !secrets) return;
+  const { counts } = tallyVotes(allVotes(), alive(), g.vote?.candidates || null, rules());
+  const clean = Object.fromEntries(Object.entries(counts).filter(([, n]) => n > 0));
+  if (JSON.stringify(clean) !== JSON.stringify(lobby.tally || {})) set(lobbyRef("tally"), Object.keys(clean).length ? clean : null).catch(() => {});
+}
 
 // --- over ---
 
@@ -1200,6 +1224,7 @@ function renderLog() {
         nightDeaths(e).length ? [t(nightDeaths(e).length > 1 ? "logDied" : "logKilled"), el("strong", {}, andList(nightDeaths(e)))] : t("logNoDeath"),
         secret.map((s) => el("span", { class: "secret" }, uiIcon("lock"), s)));
     }
+    if (e.type === "left") return el("li", {}, t("logLeft", listNames(Object.keys(e.players || {}))));
     if (e.runoff) return el("li", {}, t("logRunoff", e.round, listNames(e.runoff)));
     const votes = e.votes != null ? ` (${t("votes", e.votes)})` : "";
     return el("li", {}, t("logDay", e.round),
@@ -1221,6 +1246,7 @@ function renderSettings() {
   }
   const locked = !!game();
   const editable = isController() && !locked;
+  $("#game-tools").hidden = !(isController() && game() && game().phase !== "setup");
   $("#rules-note").textContent = locked ? t("rulesLocked") : editable ? t("rulesEditable") : t("rulesReadOnly", runnerName());
   list.classList.toggle("rules-disabled", !editable);
   const r = rules();
@@ -1280,6 +1306,11 @@ function setupSheets() {
   };
   sheet("#btn-info", "#info", "#btn-info-close", renderInfoRoles);
   sheet("#btn-settings", "#settings", "#btn-settings-close", renderSettings);
+  $("#btn-stop-game").addEventListener("click", () => {
+    if (!confirm(t("confirmEnd"))) return;
+    $("#settings").close();
+    run(endGame)();
+  });
   for (const input of document.querySelectorAll('input[name="lang"]')) {
     input.addEventListener("change", () => changeLanguage(input.value));
   }
@@ -1378,6 +1409,7 @@ function syncSecrets() {
     bittenRound = null;
     suspects = {};
     notes = {};
+    myBallot = null;
     secrets = null;
     revealed = false;
     notesOpen = false;
@@ -1408,10 +1440,65 @@ function syncSecrets() {
       subscribe("converted", `secrets/${code}/converted/${uid}`, (r) => { bittenRound = r || null; renderGame(); });
     }
     subscribe("mimed", `secrets/${code}/mimed/${uid}`, (v) => { mimedTarget = v || null; renderGame(); });
+    if (rules().voteSecret !== "open") subscribe("ballot", `secrets/${code}/ballots/${uid}`, (v) => { myBallot = v; renderGame(); });
     if (rules().notebook) subscribe("notes", `secrets/${code}/notes/${uid}`, (v) => { notes = v || {}; renderGame(); });
     if (game()?.mode === "remote") subscribe("suspects", `secrets/${code}/suspects/${uid}`, (v) => { suspects = v || {}; renderGame(); });
     renderGame();
   });
+}
+
+// ---------- the master or host offline ----------
+
+const OFFLINE_LIMIT = 60_000; // after a minute offline the master's game ends, the host's role passes on
+let ctrlOffline = null;       // { id, since }: the controller this phone has seen offline, and since when
+
+/** Who takes over from an offline controller: the host if they're online, otherwise whoever joined first among those online. */
+function successor(gone) {
+  const online = Object.entries(players()).filter(([id]) => id !== gone && id !== lobby.masterId && isOnline(id))
+    .sort(([, a], [, b]) => a.joinedAt - b.joinedAt).map(([id]) => id);
+  return online.includes(lobby.hostId) ? lobby.hostId : online[0] || null;
+}
+
+let orphanKey = null;
+function watchController() {
+  // a live or hybrid game that lost its master (e.g. the takeover's second write failed): only ending it makes sense
+  const g = game();
+  if (isController() && !lobby.masterId && (g?.mode === "live" || g?.mode === "hybrid") && orphanKey !== g.startedAt) {
+    orphanKey = g.startedAt;
+    endGame().catch(() => { orphanKey = null; });
+  }
+  const gone = controllerId();
+  if (!lobby || !joined || !gone || isOnline(gone)) {
+    ctrlOffline = null;
+    renderOfflineBanner();
+    return;
+  }
+  if (ctrlOffline?.id !== gone) ctrlOffline = { id: gone, since: Date.now() };
+  renderOfflineBanner();
+  if (Date.now() - ctrlOffline.since < OFFLINE_LIMIT || successor(gone) !== uid) return;
+  ctrlOffline = { id: gone, since: Date.now() }; // try again in a minute if this fails
+  const wasMaster = gone === lobby.masterId;
+  const playing = !!game();
+  const updates = { [`lobbies/${code}/hostId`]: uid };
+  if (wasMaster) updates[`lobbies/${code}/masterId`] = null;
+  update(ref(db), updates)
+    .then(() => (wasMaster && playing ? endGame() : null)) // without its master the game can't go on
+    .catch(() => {});
+}
+
+function renderOfflineBanner() {
+  const banner = $("#ctrl-offline");
+  if (!ctrlOffline || !lobby) {
+    banner.hidden = true;
+    return;
+  }
+  const left = Math.max(0, Math.ceil((OFFLINE_LIMIT - (Date.now() - ctrlOffline.since)) / 1000));
+  const name = playerName(ctrlOffline.id);
+  const next = successor(ctrlOffline.id);
+  banner.hidden = false;
+  banner.textContent = ctrlOffline.id === lobby.masterId
+    ? t(game() ? "masterOfflineGame" : "masterOffline", name, left)
+    : t("hostOffline", name, left, next ? playerName(next) : t("someone"));
 }
 
 // ---------- lobby subscription & presence ----------
@@ -1439,6 +1526,7 @@ function onLobby(data) {
   // the creator may have left without joining (or the lobby predates hosts): the first player to notice takes over
   if (joined && !players()[lobby.hostId]) set(lobbyRef("hostId"), uid).catch(() => {});
   syncSecrets();
+  watchController();
   renderLobby();
   renderGame();
   renderMasterToggle();
@@ -1474,6 +1562,8 @@ function closeLobby() {
   joined = false;
   firstSnapshot = true;
   setup = null;
+  ctrlOffline = null;
+  renderOfflineBanner();
   syncSecrets();
   renderConnection();
   return left;
@@ -1547,15 +1637,34 @@ async function saveProfile(name, wantMaster) {
   await set(lobbyRef("players", uid), { name, joinedAt: me?.joinedAt ?? Date.now() });
 }
 
+/** What leaving does to a game in progress: the master ends it, the host passes it on, a player drops out. */
+function leaveWarning() {
+  const g = game();
+  if (!g || !PLAYING.includes(g.phase) || g.phase === "over") return t("confirmLeave");
+  if (isMaster()) return t("confirmLeaveMaster");
+  if (isHostOnly()) return t("confirmLeaveHost", nextHost() ? playerName(nextHost()) : t("someone"));
+  return alive()[uid] === true ? t("confirmLeavePlayer") : t("confirmLeave");
+}
+
+/** Whoever joined first among the others takes over as host. */
+function nextHost() {
+  const [next] = Object.entries(players()).filter(([id]) => id !== uid).sort(([, a], [, b]) => a.joinedAt - b.joinedAt);
+  return next?.[0] || null;
+}
+
 async function leaveLobby() {
+  const g = game();
+  const playing = g && PLAYING.includes(g.phase) && g.phase !== "over";
+  if (playing && isMaster()) await endGame(); // without the master the game can't go on: it stops for everyone
+  else if (playing && isHostOnly() && alive()[uid] === true) await dropLeavers([uid]); // the next host carries on without them
   const me = players()[uid];
   const writes = [remove(lobbyRef("players", uid)), dropPresence()];
   if (me) writes.push(remove(lobbyRef("names", nameKey(me.name))));
   if (lobby.masterId === uid) writes.push(remove(lobbyRef("masterId")));
   if (lobby.hostId === uid) {
     // pass the host role to whoever joined first among the others
-    const [next] = Object.entries(players()).filter(([id]) => id !== uid).sort(([, a], [, b]) => a.joinedAt - b.joinedAt);
-    writes.push(next ? set(lobbyRef("hostId"), next[0]) : remove(lobbyRef("hostId")));
+    const next = nextHost();
+    writes.push(next ? set(lobbyRef("hostId"), next) : remove(lobbyRef("hostId")));
   }
   await Promise.all(writes);
   goHome();
@@ -1586,10 +1695,12 @@ async function assignRoles() {
   await update(ref(db), {
     [`secrets/${code}`]: compact({ roles, wolves, masons: Object.keys(masonSet).length ? masonSet : null, cursed: cursedSet }),
     [`lobbies/${code}/votes`]: null,
+    [`lobbies/${code}/tally`]: null,
     [`lobbies/${code}/seen`]: null,
     [`lobbies/${code}/game`]: {
       phase: "assigned", mode: roomMode(), rules: roomMode() === "live" ? { ...rules(), seerSees: "team" } : rules(), counts, startedAt: Date.now(), round: 0,
       alive: Object.fromEntries(ids.map((id) => [id, true])),
+      names: Object.fromEntries(ids.map((id) => [id, players()[id].name])),
     },
   });
 }
@@ -1601,7 +1712,7 @@ function startNight() {
     [gamePath("round")]: round,
     [gamePath("step")]: "sleep",
     [gamePath("vote")]: null,
-    [`lobbies/${code}/votes`]: null,
+    ...clearVotes(),
     [`lobbies/${code}/nightDone`]: null,
     [`lobbies/${code}/decree`]: null,
     [`secrets/${code}/wolfVotes`]: null,
@@ -1741,7 +1852,7 @@ function resolveNightNow() {
   if (!won) {
     updates[gamePath("phase")] = "day";
     updates[gamePath("vote")] = { ballot: 1 };
-    updates[`lobbies/${code}/votes`] = null;
+    Object.assign(updates, clearVotes());
   }
   return update(ref(db), updates);
 }
@@ -1750,7 +1861,7 @@ function closeVoteNow() {
   const g = game();
   if (g?.phase !== "day" || g.vote?.done) return Promise.resolve();
   const vote = g.vote || { ballot: 1 };
-  return applyVoteResult(closeVote(vote.ballot, lobby.votes || {}, alive(), vote.candidates || null, rules(), randomInt));
+  return applyVoteResult(closeVote(vote.ballot, allVotes(), alive(), vote.candidates || null, rules(), randomInt));
 }
 
 /** result: { eliminated, drawn? } or { runoff: [ids] }, optionally with vote `counts` (remote mode). */
@@ -1759,7 +1870,7 @@ function applyVoteResult(result) {
   const vote = g.vote || { ballot: 1 };
   const updates = {};
   if (rules().notebook) {
-    for (const [voter, target] of Object.entries(lobby.votes || {})) {
+    for (const [voter, target] of Object.entries(allVotes())) {
       if (alive()[voter] && alive()[target] !== undefined) updates[`secrets/${code}/notes/${voter}/d${g.round}-${vote.ballot}`] = { act: "vote", target };
     }
     if (result.mayor) updates[`secrets/${code}/notes/${result.mayor}/d${g.round}-${vote.ballot}`] = { act: "decree", target: result.eliminated };
@@ -1767,7 +1878,7 @@ function applyVoteResult(result) {
   if (result.runoff) {
     updates[gamePath(`log/${logEntries().length}`)] = { type: "vote", round: g.round, ballot: vote.ballot, runoff: result.runoff };
     updates[gamePath("vote")] = { ballot: 2, candidates: Object.fromEntries(result.runoff.map((id) => [id, true])) };
-    updates[`lobbies/${code}/votes`] = null;
+    Object.assign(updates, clearVotes());
     return update(ref(db), updates);
   }
   const eliminated = result.eliminated || null;
@@ -1780,7 +1891,7 @@ function applyVoteResult(result) {
   }
   updates[`lobbies/${code}/decree`] = null;
   const won = outcome(updates, entry, eliminated, "vote");
-  if (!won) updates[gamePath("vote")] = compact({ ballot: vote.ballot, done: true, eliminated, drawn, mayor });
+  if (!won) updates[gamePath("vote")] = compact({ ballot: vote.ballot, done: true, eliminated, drawn, mayor, counts: mayor ? null : result.counts });
   return update(ref(db), updates);
 }
 
@@ -1796,9 +1907,39 @@ function applyDecree() {
   applyVoteResult({ eliminated: target, mayor: by }).catch(() => { decreeKey = null; });
 }
 
+/** Controller: players who left the room during the game are out of it (the game might end there). */
+let leaversKey = null;
+function dropLeavers(ids = aliveIds(alive()).filter((id) => !players()[id])) {
+  const g = game();
+  if (!ids.length || !["assigned", "night", "day"].includes(g?.phase)) return Promise.resolve();
+  const key = `${g.round}:${ids.join(",")}`;
+  if (leaversKey === key) return Promise.resolve();
+  leaversKey = key;
+  const updates = {};
+  const won = outcome(updates, { type: "left", round: g.round || 0, players: Object.fromEntries(ids.map((id) => [id, true])) }, ids, "left");
+  for (const id of ids) updates[`lobbies/${code}/votes/${id}`] = null;
+  // whoever had picked a player who left must choose again (tonight's targets, today's votes)
+  const gone = (target) => ids.includes(target);
+  for (const [voter, target] of Object.entries(allVotes())) {
+    if (!gone(target)) continue;
+    updates[`lobbies/${code}/votes/${voter}`] = null;
+    if (secretVote()) updates[`secrets/${code}/ballots/${voter}`] = null;
+  }
+  for (const [kind, picks] of [["wolfVotes", secrets?.wolfVotes], ["actions", secrets?.actions]]) {
+    for (const [by, target] of Object.entries(picks || {})) {
+      // the seer, gravedigger and mime already have their answer: only a protection or a visit can be redone
+      if (!gone(target) || (kind === "actions" && !["magician", "medium"].includes(secrets.roles?.[by]))) continue;
+      updates[`secrets/${code}/${kind}/${by}`] = null;
+      updates[`lobbies/${code}/nightDone/${by}`] = null;
+    }
+  }
+  if (won) updates[`lobbies/${code}/votes`] = null;
+  return update(ref(db), updates).catch(() => { leaversKey = null; });
+}
+
 function endGame() {
   return update(ref(db), {
-    [`secrets/${code}`]: null, [`lobbies/${code}/game`]: null, [`lobbies/${code}/votes`]: null, [`lobbies/${code}/seen`]: null,
+    [`secrets/${code}`]: null, [`lobbies/${code}/game`]: null, [`lobbies/${code}/votes`]: null, [`lobbies/${code}/tally`]: null, [`lobbies/${code}/seen`]: null,
     [`lobbies/${code}/nightDone`]: null, [`lobbies/${code}/decree`]: null,
   });
 }
@@ -1855,7 +1996,7 @@ function bindEvents() {
   $("#btn-edit").addEventListener("click", openProfile);
 
   $("#btn-leave").addEventListener("click", () => {
-    if (confirm(t("confirmLeave"))) run(leaveLobby)();
+    if (confirm(leaveWarning())) run(leaveLobby)();
   });
 
   for (const input of document.querySelectorAll('input[name="mode"]')) {
@@ -1971,6 +2112,7 @@ async function main() {
   });
 
   bindEvents();
+  setInterval(watchController, 1000); // time passes without any lobby update: keep the countdown going
 
   const urlCode = new URLSearchParams(location.search).get("code");
   const startCode = urlCode || store("lupus.lobby");

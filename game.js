@@ -34,6 +34,7 @@ export const DEFAULT_RULES = {
   reveal: "none",           // roles revealed when leaving the game: "none", "voted" (only by vote), "all"
   masonsWake: "first",      // live: the master calls the masons on the "first" night only, or "every" night
   hybridVote: "hands",      // hybrid games: the day vote by show of "hands" (the master records it) or on "phones"
+  voteSecret: "open",       // phone votes: "open" (everyone sees who votes whom), "count" (only the running totals), "after" (nothing until it closes)
   mayorUses: "once",        // the mayor decides the vote alone "once" per game, or "every" day
   proleKnows: true,         // the prole knows their role (false: they believe they are a citizen until bitten)
   seerSeesProle: "village", // before the bite the seer sees the prole as "village" (not a wolf) or "wolf"
@@ -48,6 +49,7 @@ export const RULE_OPTIONS = {
   reveal: ["none", "voted", "all"],
   masonsWake: ["first", "every"],
   hybridVote: ["hands", "phones"],
+  voteSecret: ["open", "count", "after"],
   mayorUses: ["once", "every"],
   seerSeesProle: ["village", "wolf"],
 };

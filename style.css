@@ -120,7 +120,7 @@ button.danger { color: #ff8a8a; }
 }
 .plain-list li:first-child { border-top: none; }
 .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); flex: none; }
-.dot.off { background: var(--line); }
+.dot.off { background: #e8b84a; } /* offline: yellow */
 .pname { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .badge { font-size: .75rem; padding: 2px 8px; border-radius: 999px; background: var(--bg-2); color: var(--muted); border: 1px solid var(--line); }
 .badge.master { color: var(--bg); background: var(--accent-2); border-color: var(--accent-2); font-weight: 700; }
@@ -369,3 +369,5 @@ button.link.mark-btn { width: auto; flex: none; padding: 2px 6px; font-size: 1re
 .chip { display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; border-radius: 999px; background: var(--bg-2); border: 1px solid var(--line); color: var(--text); font-size: .85rem; cursor: pointer; }
 .chip.on { border-color: var(--accent-2); }
 .chip .ri { width: 18px; height: 18px; }
+.offline-banner { top: 12px; bottom: auto; width: min(calc(100vw - 32px), 440px); border-radius: 12px; text-align: center; background: #3b3220; border: 1px solid #e8b84a; color: var(--text); z-index: 10; }
+.pname .badge.master, .pname .badge.special { margin-left: 8px; }

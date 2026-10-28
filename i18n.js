@@ -253,7 +253,7 @@ const STRINGS = {
     liveRunoff: (n) => `Ballottaggio tra ${n}: votate di nuovo a voce.`, liveVote: "Discutete e votate a voce. Il master registra il risultato.",
     remoteRunoff: (n) => `Ballottaggio tra ${n}: votate di nuovo, solo tra loro.`,
     remoteVote: "Discutete, poi vota chi pensi sia un lupo. Puoi cambiare il voto finché la votazione non si chiude.",
-    watchVote: "Il villaggio sta votando. I voti sono pubblici.", allVoted: "Hanno votato tutti: la votazione si chiude tra pochi secondi…",
+    watchVote: "Il villaggio sta votando.", watchVoteOpen: "Il villaggio sta votando. I voti sono pubblici.", allVoted: "Hanno votato tutti: la votazione si chiude tra pochi secondi…",
     votedCount: (k, n) => `Hanno votato ${k} giocatori vivi su ${n}.`, closeVote: "Chiudi la votazione",
     confirmCloseVote: "Non hanno ancora votato tutti. Chiudere comunque la votazione?", deadNoVote: "Sei fuori gioco, quindi non puoi votare.",
     forceClose: "Qualcuno non vota? Chiudi la votazione adesso", confirmForceClose: "Chiudere adesso la votazione con i voti dati finora?",
@@ -271,6 +271,15 @@ const STRINGS = {
     roomFull: "Questa stanza è piena.", nameTaken: "Questo nome è già usato in questa stanza.", enterName: "Inserisci un nome.",
     someone: "Qualcuno", confirmLeave: "Vuoi uscire dalla stanza?",
     confirmEnd: "Terminare la partita e tornare alla stanza? I ruoli verranno cancellati.",
+    gameTools: "Partita in corso", stopGame: "Termina la partita e torna alla stanza",
+    stopGameHint: "Se qualcuno se n'è andato o la partita non può continuare, chiudila: tutti tornano alla stanza.",
+    confirmLeaveMaster: "Se esci, la partita finisce per tutti e si torna alla stanza. Uscire?",
+    confirmLeaveHost: (n) => `Se esci, sei fuori dalla partita e ${n} diventa l'host. Uscire?`,
+    confirmLeavePlayer: "Se esci, sei fuori dalla partita e non potrai rientrare. Uscire?",
+    logLeft: (n) => `${n} ha lasciato la partita.`,
+    masterOfflineGame: (n, s) => `Il master ${n} è offline. Se non torna entro ${s} s, la partita termina per tutti.`,
+    masterOffline: (n, s) => `Il master ${n} è offline. Se non torna entro ${s} s, esce dal ruolo di master.`,
+    hostOffline: (n, s, x) => `L'host ${n} è offline. Se non torna entro ${s} s, ${x} diventa l'host.`,
     copied: "Codice copiato!", codeIs: (c) => `Codice: ${c}`, linkCopied: "Link di invito copiato!", inviteText: (c) => `Gioca con me! Codice ${c}`,
     cantConnect: (m) => `Impossibile connettersi: ${m}`, teamWolves: "Lupi", teamVillage: "Villaggio",
     // house rules
@@ -308,6 +317,11 @@ const STRINGS = {
     checkNobody: "Stanotte nessuno è diventato un lupo.",
     thenCheck: "Quando tutti hanno guardato e rimesso giù il telefono, continua.",
     rule_hybridVote: "In modalità ibrida, il voto del giorno si fa…", opt_hybridVote_hands: "per alzata di mano", opt_hybridVote_phones: "sul telefono",
+    rule_voteSecret: "Il voto sul telefono è…", opt_voteSecret_open: "palese: tutti vedono chi vota chi",
+    opt_voteSecret_count: "segreto: si vedono solo i voti che salgono", opt_voteSecret_after: "segreto: i risultati solo a votazione chiusa",
+    secretNote_count: "Voto segreto: vedi quanti voti riceve ognuno, ma non chi li ha dati.",
+    secretNote_after: "Voto segreto: i risultati si vedono solo quando la votazione si chiude.",
+    voteTotals: (v) => `Voti: ${v}.`,
     rule_proleKnows: "La Prole sa di essere la Prole", rule_proleKnows_desc: "Se disattivato, il suo telefono mostra Cittadino finché non viene morsa.",
     step_masons: "Massoni", sayMasons: "Massoni, aprite gli occhi e riconoscetevi.",
     masonsAre: (n) => `I massoni sono ${n}. Lasciali guardarsi, poi continua.`,
@@ -477,7 +491,7 @@ const STRINGS = {
     liveRunoff: (n) => `Run-off between ${n}: vote again out loud.`, liveVote: "Discuss and vote out loud. The master records the result.",
     remoteRunoff: (n) => `Run-off between ${n}: vote again, only among them.`,
     remoteVote: "Discuss, then vote who you think is a wolf. You can change your vote until the vote closes.",
-    watchVote: "The village is voting. Votes are public.", allVoted: "Everyone has voted: the vote closes in a few seconds…",
+    watchVote: "The village is voting.", watchVoteOpen: "The village is voting. Votes are public.", allVoted: "Everyone has voted: the vote closes in a few seconds…",
     votedCount: (k, n) => `${k} of ${n} living players have voted.`, closeVote: "Close the vote",
     confirmCloseVote: "Not everyone has voted yet. Close the vote anyway?", deadNoVote: "You are out, so you can't vote.",
     forceClose: "Someone isn't voting? Close the vote now", confirmForceClose: "Close the vote now with the votes cast so far?",
@@ -492,6 +506,15 @@ const STRINGS = {
     roomFull: "This room is full.", nameTaken: "That name is already taken in this room.", enterName: "Please enter a name.",
     someone: "Someone", confirmLeave: "Leave this room?",
     confirmEnd: "End this game and go back to the room? Roles will be cleared.",
+    gameTools: "Game in progress", stopGame: "End the game and go back to the room",
+    stopGameHint: "If someone has left or the game can't go on, end it: everyone goes back to the room.",
+    confirmLeaveMaster: "If you leave, the game ends for everyone and you all go back to the room. Leave?",
+    confirmLeaveHost: (n) => `If you leave, you're out of the game and ${n} becomes the host. Leave?`,
+    confirmLeavePlayer: "If you leave, you're out of the game and can't come back. Leave?",
+    logLeft: (n) => `${n} left the game.`,
+    masterOfflineGame: (n, s) => `The master ${n} is offline. If they're not back within ${s} s, the game ends for everyone.`,
+    masterOffline: (n, s) => `The master ${n} is offline. If they're not back within ${s} s, they stop being the master.`,
+    hostOffline: (n, s, x) => `The host ${n} is offline. If they're not back within ${s} s, ${x} becomes the host.`,
     copied: "Code copied!", codeIs: (c) => `Code: ${c}`, linkCopied: "Invite link copied!", inviteText: (c) => `Join my game! Code ${c}`,
     cantConnect: (m) => `Could not connect: ${m}`, teamWolves: "Wolves", teamVillage: "Village",
     group_vote: "Voting", group_notebook: "Notebook",
@@ -528,6 +551,11 @@ const STRINGS = {
     checkNobody: "Nobody became a wolf tonight.",
     thenCheck: "When everyone has looked and put their phone down, continue.",
     rule_hybridVote: "In hybrid games, the day vote is held…", opt_hybridVote_hands: "by show of hands", opt_hybridVote_phones: "on the phones",
+    rule_voteSecret: "The phone vote is…", opt_voteSecret_open: "open: everyone sees who votes whom",
+    opt_voteSecret_count: "secret: only the rising totals are shown", opt_voteSecret_after: "secret: results only once the vote closes",
+    secretNote_count: "Secret vote: you see how many votes each player gets, not who gave them.",
+    secretNote_after: "Secret vote: the results appear only when the vote closes.",
+    voteTotals: (v) => `Votes: ${v}.`,
     rule_proleKnows: "The Cursed knows they are the Cursed", rule_proleKnows_desc: "If off, their phone shows Citizen until they are bitten.",
     step_masons: "Masons", sayMasons: "Masons, open your eyes and recognise each other.",
     masonsAre: (n) => `The masons are ${n}. Let them look at each other, then continue.`,
@@ -610,6 +638,7 @@ const GUIDE = {
       <p>Il villaggio discute liberamente, poi ognuno vota chi vuole eliminare (${r.selfVote ? "si può votare anche se stessi" : "non si può votare se stessi"}).</p>
       <ul>
         <li>Chi riceve <strong>più voti</strong> viene eliminato.</li>
+        <li>Sul telefono il voto è ${{ open: "<strong>palese</strong>: tutti vedono chi vota chi", count: "<strong>segreto</strong>: si vedono i voti che ognuno riceve, ma non chi li ha dati", after: "<strong>segreto</strong>: i risultati si vedono solo a votazione chiusa" }[r.voteSecret]}.</li>
         <li>In caso di <strong>pareggio</strong> si fa un <strong>ballottaggio</strong> solo tra i giocatori a pari voti.</li>
         <li>Se anche il ballottaggio finisce in pareggio, ${r.secondTie === "random"
           ? "<strong>si estrae a sorte</strong> uno dei giocatori a pari voti." : "quel giorno <strong>nessuno viene eliminato</strong>."}</li>
@@ -694,6 +723,7 @@ const GUIDE = {
       <p>The village discusses freely, then everyone votes who to eliminate (${r.selfVote ? "voting for yourself is allowed" : "you can't vote for yourself"}).</p>
       <ul>
         <li>Whoever gets <strong>the most votes</strong> is eliminated.</li>
+        <li>On the phones the vote is ${{ open: "<strong>open</strong>: everyone sees who votes whom", count: "<strong>secret</strong>: you see the votes each player gets, not who gave them", after: "<strong>secret</strong>: results appear only once the vote closes" }[r.voteSecret]}.</li>
         <li>On a <strong>tie</strong> there is a <strong>run-off</strong> only between the tied players.</li>
         <li>If the run-off is tied too, ${r.secondTie === "random"
           ? "<strong>one of the tied players is drawn at random</strong>." : "<strong>nobody is eliminated</strong> that day."}</li>

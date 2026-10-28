@@ -184,6 +184,7 @@
     </section>
 
     <p id="conn-status" class="conn" hidden data-i18n="reconnecting"></p>
+    <p id="ctrl-offline" class="conn offline-banner" role="status" hidden></p>
   </main>
 
   <!-- Settings: language (per phone) and the room's house rules -->
@@ -193,6 +194,11 @@
       <button class="link close" id="btn-settings-close" data-i18n-aria="close">✕</button>
     </div>
     <div class="sheet-body">
+      <div id="game-tools" hidden>
+        <h3 data-i18n="gameTools"></h3>
+        <p class="muted small" data-i18n="stopGameHint"></p>
+        <button class="secondary danger" id="btn-stop-game" data-i18n="stopGame"></button>
+      </div>
       <h3 data-i18n="language"></h3>
       <div class="lang-switch" role="radiogroup" data-i18n-aria="language">
         <label class="lang"><input type="radio" name="lang" value="it"><span><img class="ri" src="icons/ui/flag-it.svg" alt=""> Italiano</span></label>
